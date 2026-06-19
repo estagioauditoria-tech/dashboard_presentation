@@ -380,6 +380,7 @@ function renderDashboard(data) {
   }
 
   document.getElementById('btn-editar').classList.toggle('hidden', editMode || viewMode);
+  document.getElementById('btn-baixar').classList.toggle('hidden', editMode || viewMode);
   document.getElementById('btn-pdf').classList.toggle('hidden', false);
 
   // KPIs — agrupar por incluir
@@ -609,8 +610,18 @@ function openFinalizarModal() {
   if (viewMode) footer += '<button class="btn" onclick="backToEdit()">Voltar a editar</button>';
   footer += '<button class="btn btn-danger" onclick="discardEdits()">Descartar</button>';
   footer += '<button class="btn" onclick="enterViewMode()">Visualizar</button>';
-  footer += '<button class="btn btn-primary" onclick="downloadEditedTXT()">Baixar TXT</button>';
+  footer += '<button class="btn" onclick="downloadEditedTXT()">Baixar TXT</button>';
+  footer += '<button class="btn btn-primary" onclick="confirmEdits()">Confirmar edicoes</button>';
   openModal('Revisao do TXT', bodyHTML, footer);
+}
+
+function confirmEdits() {
+  dataSnapshot = null;
+  editMode = false;
+  viewMode = false;
+  updateModeUI();
+  closeModal();
+  renderDashboard(dashboardData);
 }
 
 /* ══════════════════════════════════════════
@@ -627,12 +638,12 @@ function showPopover(anchorEl, html, onClick) {
   pop.innerHTML = html;
   document.body.appendChild(pop);
   const rect = anchorEl.getBoundingClientRect();
-  pop.style.top = (rect.bottom + 4 + window.scrollY) + 'px';
-  pop.style.left = (rect.left + window.scrollX) + 'px';
+  pop.style.top = (rect.bottom + 4) + 'px';
+  pop.style.left = rect.left + 'px';
+  pop.style.maxHeight = Math.max(120, window.innerHeight - rect.bottom - 16) + 'px';
   requestAnimationFrame(() => {
     const pr = pop.getBoundingClientRect();
-    if (pr.right > window.innerWidth - 8) pop.style.left = (window.innerWidth - pr.width - 8) + 'px';
-    if (pr.bottom > window.innerHeight - 8) pop.style.top = (rect.top - pr.height - 4 + window.scrollY) + 'px';
+    if (pr.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - pr.width - 8) + 'px';
   });
   if (onClick) pop.addEventListener('click', onClick);
   activePopover = pop;
@@ -774,6 +785,31 @@ function editChartData(ci, chi, el) {
   });
 }
 
+/* ── Helpers de coleta ── */
+
+function getAllGroupNames() {
+  const groups = [];
+  for (const card of dashboardData.cards)
+    for (const grupo of card.grupos)
+      if (!groups.includes(grupo.nome)) groups.push(grupo.nome);
+  return groups;
+}
+
+function getAllStateNames() {
+  const states = [];
+  for (const raiz of Object.values(dashboardData.raizes))
+    if (raiz.tipo === 'enum')
+      for (const e of raiz.estados)
+        if (!states.includes(e.nome)) states.push(e.nome);
+  return states;
+}
+
+function buildOptions(items, selected, emptyLabel) {
+  let html = emptyLabel ? '<option value=""' + (!selected ? ' selected' : '') + '>' + emptyLabel + '</option>' : '';
+  for (const item of items) html += '<option value="' + esc(item) + '"' + (selected === item ? ' selected' : '') + '>' + esc(item) + '</option>';
+  return html;
+}
+
 /* ── KPI (cabecalho) ── */
 
 function editKpiLabel(ki, el) {
@@ -789,37 +825,45 @@ function editKpiLabel(ki, el) {
 
 function editKpiConfig(ki, el) {
   const kpi = dashboardData.cabecalho[ki];
-  const funcoes = ['contagem', 'soma', 'media', 'maximo', 'minimo', 'porcentagem'];
   const isPct = kpi.funcao === 'porcentagem';
-  const funcaoOpts = funcoes.map(f => '<option value="' + f + '"' + (kpi.funcao === f ? ' selected' : '') + '>' + f + '</option>').join('');
+  const groups = getAllGroupNames();
+  const states = getAllStateNames();
+  const kpiLabels = dashboardData.cabecalho.filter((_, i) => i !== ki).map(k => k.label);
 
-  let html = '<div class="popover-title">Configurar indicador</div><div class="popover-form">' +
-    '<label class="popover-field-label">Funcao</label>' +
+  const funcoes = [
+    { v: 'contagem', l: 'Contagem' },
+    { v: 'soma', l: 'Soma' },
+    { v: 'media', l: 'Media' },
+    { v: 'maximo', l: 'Maior valor' },
+    { v: 'minimo', l: 'Menor valor' },
+    { v: 'porcentagem', l: 'Porcentagem' }
+  ];
+  const funcaoOpts = funcoes.map(f => '<option value="' + f.v + '"' + (kpi.funcao === f.v ? ' selected' : '') + '>' + f.l + '</option>').join('');
+
+  const fonteItems = ['*'].concat(groups);
+  const pctFiltro = kpi.numerador?.filtro || '';
+  const pctFonte = kpi.numerador?.fonte || kpi.fonte || '*';
+
+  let html =
+    '<div class="popover-title">Configurar indicador</div><div class="popover-form">' +
+    '<label class="popover-field-label">O que calcular?</label>' +
     '<select class="inline-edit popover-input" data-field="funcao">' + funcaoOpts + '</select>' +
     '<div data-container="standard-fields"' + (isPct ? ' style="display:none"' : '') + '>' +
-    '<label class="popover-field-label">Fonte (grupo ou *)</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="fonte" value="' + esc(kpi.fonte || '') + '">' +
-    '<label class="popover-field-label">Filtro</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="filtro" value="' + esc(kpi.filtro || '') + '">' +
+    '<label class="popover-field-label">Buscar itens de</label>' +
+    '<select class="inline-edit popover-input" data-field="fonte">' + buildOptions(fonteItems, kpi.fonte || '*') + '</select>' +
+    '<label class="popover-field-label">Apenas com status</label>' +
+    '<select class="inline-edit popover-input" data-field="filtro">' + buildOptions(states, kpi.filtro, 'todos') + '</select>' +
     '</div>' +
     '<div data-container="pct-fields"' + (isPct ? '' : ' style="display:none"') + '>' +
-    '<label class="popover-field-label">Numerador — funcao</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="num-funcao" value="' + esc(kpi.numerador?.funcao || 'contagem') + '">' +
-    '<label class="popover-field-label">Numerador — fonte</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="num-fonte" value="' + esc(kpi.numerador?.fonte || '*') + '">' +
-    '<label class="popover-field-label">Numerador — filtro</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="num-filtro" value="' + esc(kpi.numerador?.filtro || '') + '">' +
-    '<label class="popover-field-label">Denominador — funcao</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="den-funcao" value="' + esc(kpi.denominador?.funcao || 'contagem') + '">' +
-    '<label class="popover-field-label">Denominador — fonte</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="den-fonte" value="' + esc(kpi.denominador?.fonte || '*') + '">' +
-    '<label class="popover-field-label">Denominador — filtro</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="den-filtro" value="' + esc(kpi.denominador?.filtro || '') + '">' +
+    '<label class="popover-field-label">% de itens com status</label>' +
+    '<select class="inline-edit popover-input" data-field="pct-filtro">' + buildOptions(states, pctFiltro, 'todos') + '</select>' +
+    '<label class="popover-field-label">Buscando de</label>' +
+    '<select class="inline-edit popover-input" data-field="pct-fonte">' + buildOptions(fonteItems, pctFonte) + '</select>' +
     '</div>' +
-    '<label class="popover-field-label">Sub (texto descritivo)</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="sub" value="' + esc(kpi.sub || '') + '">' +
-    '<label class="popover-field-label">Incluir em (label do pai)</label>' +
-    '<input type="text" class="inline-edit popover-input" data-field="incluir" value="' + esc(kpi.incluir || '') + '">' +
+    '<label class="popover-field-label">Legenda auxiliar</label>' +
+    '<input type="text" class="inline-edit popover-input" data-field="sub" value="' + esc(kpi.sub || '') + '" placeholder="opcional">' +
+    '<label class="popover-field-label">Exibir dentro de</label>' +
+    '<select class="inline-edit popover-input" data-field="incluir">' + buildOptions(kpiLabels, kpi.incluir, 'nenhum') + '</select>' +
     '<button class="btn popover-btn" data-action="save-kpi">Salvar</button></div>';
 
   showPopover(el, html, function(e) {
@@ -830,20 +874,14 @@ function editKpiConfig(ki, el) {
     kpi.sub = pop.querySelector('[data-field="sub"]').value.trim();
     kpi.incluir = pop.querySelector('[data-field="incluir"]').value.trim();
     if (funcao === 'porcentagem') {
+      const pf = pop.querySelector('[data-field="pct-filtro"]').value.trim();
+      const ps = pop.querySelector('[data-field="pct-fonte"]').value.trim() || '*';
       kpi.fonte = '';
       kpi.filtro = '';
-      kpi.numerador = {
-        funcao: pop.querySelector('[data-field="num-funcao"]').value.trim() || 'contagem',
-        fonte: pop.querySelector('[data-field="num-fonte"]').value.trim() || '*',
-        filtro: pop.querySelector('[data-field="num-filtro"]').value.trim()
-      };
-      kpi.denominador = {
-        funcao: pop.querySelector('[data-field="den-funcao"]').value.trim() || 'contagem',
-        fonte: pop.querySelector('[data-field="den-fonte"]').value.trim() || '*',
-        filtro: pop.querySelector('[data-field="den-filtro"]').value.trim()
-      };
+      kpi.numerador = { funcao: 'contagem', fonte: ps, filtro: pf };
+      kpi.denominador = { funcao: 'contagem', fonte: ps, filtro: '' };
     } else {
-      kpi.fonte = pop.querySelector('[data-field="fonte"]').value.trim();
+      kpi.fonte = pop.querySelector('[data-field="fonte"]').value.trim() || '*';
       kpi.filtro = pop.querySelector('[data-field="filtro"]').value.trim();
       kpi.numerador = null;
       kpi.denominador = null;

@@ -128,13 +128,13 @@ body.editing .item-status[data-editable]:hover{outline-offset:0}
 .inline-edit{font:inherit;font-size:inherit;color:var(--text);background:var(--surface2);border:1.5px solid #378ADD;border-radius:4px;padding:1px 6px;outline:none;min-width:60px;max-width:100%}
 
 /* Popover */
-.edit-popover{position:absolute;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:4px 0;min-width:160px;max-width:320px}
+.edit-popover{position:fixed;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:4px 0;min-width:160px;max-width:320px;overflow-y:auto}
 .edit-popover-option{display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;font-size:12px;color:var(--text)}
 .edit-popover-option:hover{background:var(--surface2)}
 .edit-popover-option.selected{background:var(--surface2);font-weight:600}
 .popover-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:8px 14px 4px}
 .popover-form{padding:8px 14px;display:flex;flex-direction:column;gap:8px}
-.popover-input{width:100%;padding:4px 8px;font-size:12px}
+.popover-input{width:100%;padding:6px 8px;font-size:12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px}
 .popover-radios{display:flex;gap:12px;font-size:12px;color:var(--text2)}
 .popover-radios label{display:flex;align-items:center;gap:4px;cursor:pointer}
 .popover-check{display:flex;align-items:center;gap:6px;padding:4px 14px;font-size:12px;color:var(--text);cursor:pointer}
@@ -145,6 +145,7 @@ body.editing .item-status[data-editable]:hover{outline-offset:0}
 .popover-option-create{color:#378ADD;border-top:1px solid var(--border);margin-top:2px;font-weight:500}
 .popover-field-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-top:4px}
 .popover-form select.popover-input{appearance:auto;cursor:pointer}
+.popover-form input.popover-input:focus,.popover-form select.popover-input:focus{border-color:#378ADD;outline:none}
 
 /* Botoes de edicao (add/remove) */
 .edit-action-remove{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1;flex-shrink:0}
@@ -184,7 +185,7 @@ html.dark .edit-action-remove:hover{background:#450A0A;color:#FCA5A5}
   body{padding:0;max-width:none;background:#fff;color:#000}
   body.editing,body.viewing{padding-top:0}
   .theme-toggle,.mode-bar,.modal-overlay,.edit-action-remove,.edit-action-add,.edit-action-add-card,.chart-edit-actions,.item-note-add,.footer,.header-right .btn{display:none!important}
-  #btn-editar,#btn-pdf{display:none!important}
+  #btn-editar,#btn-baixar,#btn-pdf{display:none!important}
   .attr-card{break-inside:avoid}
   .kpi{break-inside:avoid}
 }

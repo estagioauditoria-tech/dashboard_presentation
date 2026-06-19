@@ -62,7 +62,7 @@ TIPO producao = numero(ton)</pre>
   Progresso | porcentagem: contagem: * filtro: concluido / contagem: *</pre>
       <p><strong>Funcoes:</strong> contagem, soma, media, maximo, minimo, porcentagem.</p>
       <p><strong>porcentagem</strong> — calcula numerador / denominador. Ex: <code>porcentagem: contagem: * filtro: feito / contagem: *</code> resulta na % de itens feitos sobre o total.</p>
-      <p><strong>incluir:</strong> — agrupa este indicador dentro de outro card do cabecalho, expandindo-o. O nome apos <code>incluir:</code> deve ser o label exato do card pai.</p>
+      <p><strong>incluir:</strong> — faz este indicador aparecer como sub-item dentro de outro card do cabecalho, em vez de ocupar um card proprio. O card pai se expande para acomodar os dados extras. Para usar, escreva <code>incluir: Label do pai</code> onde o valor apos <code>incluir:</code> deve corresponder exatamente ao label de um indicador ja existente no cabecalho. Varios indicadores podem apontar para o mesmo pai — todos serao exibidos agrupados. Exemplo: "Pendentes" e "Concluidos" com <code>incluir: Total de itens</code> aparecem como detalhamento dentro do card "Total de itens".</p>
     </div>
 
     <div class="help-block">
@@ -130,6 +130,7 @@ CARD Sprint 12 | cor: #1D9E75
     <div class="header-right">
       <span id="header-subtitle" class="subtitle"></span>
       <button id="btn-editar" class="btn btn-primary hidden" onclick="enterEditMode()">Editar</button>
+      <button id="btn-baixar" class="btn hidden" onclick="downloadEditedTXT()">Baixar TXT</button>
       <button id="btn-pdf" class="btn hidden" onclick="exportPDF()">Exportar PDF</button>
       <button class="btn" onclick="importFile()">Importar outro</button>
       <button class="btn" onclick="resetDashboard()">Limpar</button>
