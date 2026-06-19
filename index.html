@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<button id="theme-btn" class="theme-toggle" onclick="toggleTheme()" title="Alternar tema"></button>
+
+<!-- Barras de modo -->
+<div id="edit-bar" class="mode-bar edit-bar hidden">
+  <span>Modo de edicao</span>
+  <div style="display:flex;gap:8px">
+    <button class="btn mode-bar-btn" onclick="openFinalizarModal()">Finalizar edicao</button>
+  </div>
+</div>
+<div id="view-bar" class="mode-bar view-bar hidden">
+  <span>Edicoes pendentes</span>
+  <div style="display:flex;gap:8px">
+    <button class="btn mode-bar-btn" onclick="openFinalizarModal()">Revisar alteracoes</button>
+    <button class="btn mode-bar-btn btn-danger" onclick="discardEdits()">Cancelar edicao</button>
+  </div>
+</div>
+
+<!-- Estado vazio -->
+<div id="empty-state" class="empty-state">
+  <h2>Dashboard</h2>
+  <p>Importe um arquivo TXT para gerar o dashboard. Depois, edite tudo visualmente e exporte o TXT atualizado.</p>
+  <div class="empty-actions">
+    <button class="btn" onclick="downloadTemplate()">Baixar template</button>
+    <button class="btn btn-primary" onclick="importFile()">Importar dados</button>
+  </div>
+
+  <div class="help-section">
+    <h3>Como funciona</h3>
+    <p>O dashboard e gerado a partir de um arquivo <strong>.txt</strong> com formato estruturado. Voce define tipos de dados, indicadores, cards e graficos — tudo em texto puro. Apos importar, use o <strong>modo de edicao</strong> para alterar qualquer dado visualmente e exportar o TXT editado.</p>
+
+    <div class="help-block">
+      <h4>1. Titulo</h4>
+      <pre>TITULO: Marca | Titulo do Dashboard | Subtitulo</pre>
+      <p>Define a marca, titulo e subtitulo exibidos no topo da pagina.</p>
+    </div>
+
+    <div class="help-block">
+      <h4>2. Tipos de dados (TIPO)</h4>
+      <pre>TIPO tarefa = enum(concluido: #1D9E75, pendente: #94A3B8)
+TIPO producao = numero(ton)</pre>
+      <p><strong>enum</strong> — estados categoricos. Cada estado tem um nome e uma cor.</p>
+      <p><strong>numero</strong> — valores numericos (float). A unidade entre parenteses e livre (ton, R$, %, km).</p>
+    </div>
+
+    <div class="help-block">
+      <h4>3. Cabecalho (indicadores)</h4>
+      <pre>CABECALHO
+  Total de itens | contagem: *
+  Concluidos | contagem: * | filtro: concluido | sub: finalizados
+  Pendentes | incluir: Total de itens | contagem: * | filtro: pendente
+  Producao media | media: Producao Anual | sub: ton/ano
+  Progresso | porcentagem: contagem: * filtro: concluido / contagem: *</pre>
+      <p><strong>Funcoes:</strong> contagem, soma, media, maximo, minimo, porcentagem.</p>
+      <p><strong>porcentagem</strong> — calcula numerador / denominador. Ex: <code>porcentagem: contagem: * filtro: feito / contagem: *</code> resulta na % de itens feitos sobre o total.</p>
+      <p><strong>incluir:</strong> — agrupa este indicador dentro de outro card do cabecalho, expandindo-o. O nome apos <code>incluir:</code> deve ser o label exato do card pai.</p>
+    </div>
+
+    <div class="help-block">
+      <h4>4. Cards e Grupos</h4>
+      <pre>CARD Nome do Card | cor: #378ADD
+  GRUPO Nome do Grupo
+    tarefa: Nome do item = concluido
+    tarefa: Outro item = pendente | nota: observacao</pre>
+      <p>Cada <strong>CARD</strong> e um painel visual. Dentro, <strong>GRUPO</strong> organiza os itens. Use <code>nota:</code> para anotacoes opcionais.</p>
+    </div>
+
+    <div class="help-block">
+      <h4>5. Graficos</h4>
+      <pre>GRAFICO pizza | dados: Grupo A, Grupo B
+GRAFICO barras | dados: Grupo C
+GRAFICO linhas | dados: Grupo D</pre>
+      <p><strong>pizza</strong> — ideal para enums (conta ocorrencias de cada estado). <strong>barras</strong> — ideal para valores numericos. <strong>linhas</strong> — ideal para series temporais ou evolucao.</p>
+    </div>
+
+    <div class="help-block">
+      <h4>6. Modo de edicao</h4>
+      <p>Apos importar um TXT, clique em <strong>Editar</strong> no cabecalho do dashboard. No modo de edicao voce pode:</p>
+      <p>&#8226; <strong>Alterar status</strong> — clique no icone de status para escolher outro estado</p>
+      <p>&#8226; <strong>Editar valores</strong> — clique em nomes, valores numericos ou notas para editar inline</p>
+      <p>&#8226; <strong>Adicionar/remover</strong> — use os botoes [+] e [&times;] para itens, grupos e cards</p>
+      <p>&#8226; <strong>Mudar graficos</strong> — altere o tipo (pizza/barras/linhas) e selecione quais grupos alimentam cada grafico</p>
+      <p>Ao finalizar, visualize o TXT gerado, baixe-o ou descarte as alteracoes.</p>
+    </div>
+
+    <div class="help-block">
+      <h4>Exemplo rapido</h4>
+      <pre>TITULO: Empresa | Painel de Entregas | Q2 2026
+
+TIPO status = enum(feito: #1D9E75, fazendo: #378ADD, parado: #94A3B8)
+TIPO horas = numero(h)
+
+CABECALHO
+  Total de tarefas | contagem: *
+  Feitas | incluir: Total de tarefas | contagem: * | filtro: feito
+  Horas investidas | soma: Horas por tarefa | sub: acumulado
+  Progresso | porcentagem: contagem: * filtro: feito / contagem: *
+
+CARD Sprint 12 | cor: #1D9E75
+  GRUPO Backend
+    status: API de usuarios = feito
+    status: Integracao pagamento = fazendo
+  GRUPO Horas por tarefa
+    horas: API de usuarios = 16
+    horas: Integracao pagamento = 24
+  GRAFICO pizza | dados: Backend
+  GRAFICO barras | dados: Horas por tarefa</pre>
+    </div>
+
+    <p class="help-tip">Baixe o template para ver um exemplo completo e editavel.</p>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="hidden">
+  <div id="dashboard-header" class="header">
+    <div class="header-left">
+      <span id="header-brand" class="brand"></span>
+      <span id="header-title" class="title"></span>
+    </div>
+    <div class="header-right">
+      <span id="header-subtitle" class="subtitle"></span>
+      <button id="btn-editar" class="btn btn-primary hidden" onclick="enterEditMode()">Editar</button>
+      <button id="btn-pdf" class="btn hidden" onclick="exportPDF()">Exportar PDF</button>
+      <button class="btn" onclick="importFile()">Importar outro</button>
+      <button class="btn" onclick="resetDashboard()">Limpar</button>
+    </div>
+  </div>
+
+  <div id="kpi-row" class="kpi-row"></div>
+  <div id="attr-grid" class="attr-grid"></div>
+
+  <div class="footer">
+    <span id="footer-left"></span>
+    <span id="footer-right"></span>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title" class="modal-title"></h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div id="modal-body" class="modal-body"></div>
+    <div id="modal-footer" class="modal-footer"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
