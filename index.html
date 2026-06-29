@@ -31,7 +31,8 @@
   <p>Importe um arquivo TXT para gerar o dashboard. Depois, edite tudo visualmente e exporte o TXT atualizado.</p>
   <div class="empty-actions">
     <button class="btn" onclick="downloadTemplate()">Baixar template</button>
-    <button class="btn btn-primary" onclick="importFile()">Importar dados</button>
+    <button class="btn" onclick="importFile()">Importar dados</button>
+    <button class="btn btn-primary" onclick="createFromScratch()">Criar do zero</button>
   </div>
 
   <div class="help-section">
@@ -159,6 +160,8 @@ CARD Sprint 12 | cor: #1D9E75
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

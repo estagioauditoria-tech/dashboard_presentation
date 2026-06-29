@@ -4,13 +4,19 @@ let editMode = false;
 let viewMode = false;
 let dataSnapshot = null;
 
+const TIPOS_GRAFICO = [
+  { value: 'pizza',  label: 'Pizza',  desc: 'Ideal para dados categoricos (enum)' },
+  { value: 'barras', label: 'Barras', desc: 'Ideal para valores numericos' },
+  { value: 'linhas', label: 'Linhas', desc: 'Ideal para series temporais/evolucao' }
+];
+
 /* ══════════════════════════════════════════
    PARSER
    ══════════════════════════════════════════ */
 
 function parseTXT(text) {
   const lines = text.split(/\r?\n/);
-  const data = { titulo: '', marca: '', subtitulo: '', raizes: {}, cabecalho: [], cards: [] };
+  const data = { titulo: '', marca: '', subtitulo: '', tipos: {}, cabecalho: [], cards: [] };
   let currentCard = null;
   let currentGroup = null;
   let inCabecalho = false;
@@ -54,9 +60,9 @@ function parseTXT(text) {
           if (!m) return null;
           return { nome: m[1].trim(), cor: m[2] };
         }).filter(Boolean);
-        data.raizes[name] = { tipo: 'enum', estados };
+        data.tipos[name] = { tipo: 'enum', estados };
       } else {
-        data.raizes[name] = { tipo: 'numero', unidade: body.trim() };
+        data.tipos[name] = { tipo: 'numero', unidade: body.trim() };
       }
       continue;
     }
@@ -96,7 +102,7 @@ function parseTXT(text) {
 
     if (currentGroup && line.includes(':') && line.includes('=')) {
       const colonIdx = line.indexOf(':');
-      const raiz = line.slice(0, colonIdx).trim();
+      const tipoRef = line.slice(0, colonIdx).trim();
       const rest = line.slice(colonIdx + 1).trim();
       const segments = rest.split('|').map(s => s.trim());
       const mainPart = segments[0];
@@ -108,7 +114,7 @@ function parseTXT(text) {
       for (let i = 1; i < segments.length; i++) {
         if (segments[i].startsWith('nota:')) nota = segments[i].slice(5).trim();
       }
-      currentGroup.itens.push({ raiz, nome, valor, nota });
+      currentGroup.itens.push({ tipo: tipoRef, nome, valor, nota });
       continue;
     }
   }
@@ -171,7 +177,7 @@ function exportTXT(data) {
   lines.push('TITULO: ' + data.marca + ' | ' + data.titulo + ' | ' + data.subtitulo);
   lines.push('');
 
-  for (const [name, raiz] of Object.entries(data.raizes)) {
+  for (const [name, raiz] of Object.entries(data.tipos)) {
     if (raiz.tipo === 'enum') {
       const estados = raiz.estados.map(e => e.nome + ': ' + e.cor).join(', ');
       lines.push('TIPO ' + name + ' = enum(' + estados + ')');
@@ -207,7 +213,7 @@ function exportTXT(data) {
     for (const grupo of card.grupos) {
       lines.push('  GRUPO ' + grupo.nome);
       for (const item of grupo.itens) {
-        let line = '    ' + item.raiz + ': ' + item.nome + ' = ' + item.valor;
+        let line = '    ' + item.tipo + ': ' + item.nome + ' = ' + item.valor;
         if (item.nota) line += ' | nota: ' + item.nota;
         lines.push(line);
       }
@@ -288,7 +294,7 @@ function collectChartData(card, grafico, raizes) {
     const contagem = {};
     const cores = {};
     for (const item of itens) {
-      const raiz = raizes[item.raiz];
+      const raiz = raizes[item.tipo];
       if (!raiz || raiz.tipo !== 'enum') continue;
       if (!contagem[item.valor]) contagem[item.valor] = 0;
       contagem[item.valor]++;
@@ -304,7 +310,7 @@ function collectChartData(card, grafico, raizes) {
       const contagem = {};
       const cores = {};
       for (const item of itens) {
-        const raiz = raizes[item.raiz];
+        const raiz = raizes[item.tipo];
         if (!raiz || raiz.tipo !== 'enum') continue;
         if (!contagem[item.valor]) contagem[item.valor] = 0;
         contagem[item.valor]++;
@@ -332,7 +338,7 @@ function getCardStats(card, raizes) {
   for (const grupo of card.grupos) {
     for (const item of grupo.itens) {
       total++;
-      const raiz = raizes[item.raiz];
+      const raiz = raizes[item.tipo];
       if (!raiz || raiz.tipo !== 'enum') continue;
       if (!contagem[item.valor]) contagem[item.valor] = 0;
       contagem[item.valor]++;
@@ -348,8 +354,11 @@ function getCardStats(card, raizes) {
    ══════════════════════════════════════════ */
 
 const chartInstances = [];
+const pendingChartTimeouts = [];
 
 function destroyCharts() {
+  for (const id of pendingChartTimeouts) clearTimeout(id);
+  pendingChartTimeouts.length = 0;
   chartInstances.forEach(c => c.destroy());
   chartInstances.length = 0;
 }
@@ -410,7 +419,7 @@ function renderDashboard(data) {
       html += '<div class="kpi-children">';
       for (const ch of children) {
         const cv = calcKPI(ch.kpi, data);
-        const rmChild = editMode ? '<button class="edit-action-remove" data-action="remove-kpi" data-kpi-idx="' + ch.idx + '" style="margin-left:auto">&times;</button>' : '';
+        const rmChild = editMode ? '<button class="edit-action-remove" data-action="remove-kpi" data-kpi-idx="' + ch.idx + '">&times;</button>' : '';
         html += '<div class="kpi-child">' +
           '<span class="kpi-child-label" ' + (editMode ? 'data-editable="kpi-label" data-kpi-idx="' + ch.idx + '"' : '') + '>' + esc(ch.kpi.label) + '</span>' +
           '<span class="kpi-child-value" ' + (editMode ? 'data-editable="kpi-config" data-kpi-idx="' + ch.idx + '"' : '') + '>' + cv + '</span>' +
@@ -436,20 +445,21 @@ function renderDashboard(data) {
 
   for (let ci = 0; ci < data.cards.length; ci++) {
     const card = data.cards[ci];
-    const stats = getCardStats(card, data.raizes);
+    const stats = getCardStats(card, data.tipos);
     const el = document.createElement('div');
     el.className = 'attr-card';
 
     const rmCard = editMode ? ' <button class="edit-action-remove" data-action="remove-card" data-card-idx="' + ci + '" title="Remover card">&times;</button>' : '';
+    const accentAttrs = editMode ? ' data-editable="card-color" data-card-idx="' + ci + '" title="Mudar cor"' : '';
     let headerHTML = '<div class="attr-header">' +
-      '<div class="attr-name"><div class="attr-accent" style="background:' + card.cor + '"></div>' +
+      '<div class="attr-name"><div class="attr-accent" style="background:' + card.cor + '"' + accentAttrs + '></div>' +
       '<span data-editable="card-name" data-card-idx="' + ci + '">' + esc(card.nome) + '</span>' + rmCard + '</div>' +
       '<div class="attr-stats"><div class="attr-count">' + stats.total + ' itens</div></div></div>';
 
     let bodyHTML = '<div class="attr-body">';
 
     // Graficos
-    if (card.graficos.length > 0) {
+    if (card.graficos.length > 0 || editMode) {
       bodyHTML += '<div class="chart-col">';
       for (let gri = 0; gri < card.graficos.length; gri++) {
         const grafico = card.graficos[gri];
@@ -459,15 +469,20 @@ function renderDashboard(data) {
           bodyHTML += '<div class="chart-edit-actions">' +
             '<button class="edit-action-small" data-editable="chart-type" data-card-idx="' + ci + '" data-chart-idx="' + gri + '">' + grafico.tipo + '</button>' +
             '<button class="edit-action-small" data-editable="chart-data" data-card-idx="' + ci + '" data-chart-idx="' + gri + '">dados</button>' +
+            '<button class="edit-action-remove" data-action="remove-chart" data-card-idx="' + ci + '" data-chart-idx="' + gri + '" title="Remover grafico">&times;</button>' +
             '</div>';
         }
-        const chartData = collectChartData(card, grafico, data.raizes);
+        const chartData = collectChartData(card, grafico, data.tipos);
         bodyHTML += '<div class="chart-legend">';
         for (let i = 0; i < chartData.labels.length; i++) {
-          bodyHTML += '<div class="legend-row"><span style="display:flex;align-items:center;gap:4px"><span class="legend-dot" style="background:' + chartData.colors[i] + '"></span>' + esc(chartData.labels[i]) + '</span><span style="font-weight:500">' + chartData.values[i] + '</span></div>';
+          const dotAttrs = editMode ? ' data-editable="legend-color" data-label="' + esc(chartData.labels[i]) + '" data-card-idx="' + ci + '" title="Mudar cor"' : '';
+          bodyHTML += '<div class="legend-row"><span style="display:flex;align-items:center;gap:4px"><span class="legend-dot" style="background:' + chartData.colors[i] + '"' + dotAttrs + '></span>' + esc(chartData.labels[i]) + '</span><span style="font-weight:500">' + chartData.values[i] + '</span></div>';
         }
         bodyHTML += '</div>';
-        setTimeout(() => renderChart(cid, grafico.tipo, chartData), 0);
+        pendingChartTimeouts.push(setTimeout(() => renderChart(cid, grafico.tipo, chartData), 0));
+      }
+      if (editMode) {
+        bodyHTML += '<button class="edit-action-add" data-action="add-chart" data-card-idx="' + ci + '">+ grafico</button>';
       }
       bodyHTML += '</div>';
     }
@@ -481,8 +496,8 @@ function renderDashboard(data) {
 
       for (let ii = 0; ii < grupo.itens.length; ii++) {
         const item = grupo.itens[ii];
-        const raiz = data.raizes[item.raiz];
-        let statusIcon = '○';
+        const raiz = data.tipos[item.tipo];
+        let statusIcon = '<svg width="7" height="7" viewBox="0 0 7 7" fill="none"><circle cx="3.5" cy="3.5" r="2" stroke="currentColor" stroke-width="1.5"/></svg>';
         let statusStyle = 'background:var(--pend-bg);color:var(--pend-text)';
 
         if (raiz?.tipo === 'enum') {
@@ -491,11 +506,11 @@ function renderDashboard(data) {
             statusStyle = 'background:' + estado.cor + '20;color:' + estado.cor;
           }
           if (raiz.estados.length > 0 && item.valor === raiz.estados[0].nome) {
-            statusIcon = '✓';
+            statusIcon = '<svg width="7" height="7" viewBox="0 0 7 7" fill="none"><polyline points="1,3.5 2.8,5.5 6,1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
           }
         } else if (raiz?.tipo === 'numero') {
           statusStyle = 'background:var(--surface2);color:var(--text3)';
-          statusIcon = '#';
+          statusIcon = '<svg width="7" height="7" viewBox="0 0 7 7"><line x1="2" y1="2.5" x2="5" y2="2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="2" y1="4.5" x2="5" y2="4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="2.5" y1="1.5" x2="2" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="4.5" y1="1.5" x2="4" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
         }
 
         const rmItem = editMode ? '<button class="edit-action-remove" data-action="remove-item" data-card-idx="' + ci + '" data-group-idx="' + gi + '" data-item-idx="' + ii + '" title="Remover">&times;</button>' : '';
@@ -638,12 +653,18 @@ function showPopover(anchorEl, html, onClick) {
   pop.innerHTML = html;
   document.body.appendChild(pop);
   const rect = anchorEl.getBoundingClientRect();
-  pop.style.top = (rect.bottom + 4) + 'px';
-  pop.style.left = rect.left + 'px';
+  const sy = window.pageYOffset;
+  const sx = window.pageXOffset;
+  pop.style.top = (rect.bottom + 4 + sy) + 'px';
+  pop.style.left = (rect.left + sx) + 'px';
   pop.style.maxHeight = Math.max(120, window.innerHeight - rect.bottom - 16) + 'px';
   requestAnimationFrame(() => {
     const pr = pop.getBoundingClientRect();
-    if (pr.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - pr.width - 8) + 'px';
+    if (pr.bottom > window.innerHeight - 8 && rect.top > pr.height + 8) {
+      pop.style.top = (rect.top - pr.height - 4 + sy) + 'px';
+      pop.style.maxHeight = Math.max(120, rect.top - 16) + 'px';
+    }
+    if (pr.right > window.innerWidth - 8) pop.style.left = Math.max(8 + sx, window.innerWidth - pr.width - 8 + sx) + 'px';
   });
   if (onClick) pop.addEventListener('click', onClick);
   activePopover = pop;
@@ -654,7 +675,12 @@ function showPopover(anchorEl, html, onClick) {
 }
 
 function removePopover() {
-  if (activePopover) { activePopover.remove(); activePopover = null; }
+  if (activePopover) {
+    const canvas = activePopover.querySelector('.color-wheel-canvas');
+    if (canvas && canvas._cleanup) canvas._cleanup();
+    activePopover.remove();
+    activePopover = null;
+  }
   if (popoverDismissHandler) { document.removeEventListener('click', popoverDismissHandler); popoverDismissHandler = null; }
 }
 
@@ -687,14 +713,11 @@ function inlineEdit(el, currentValue, onCommit) {
 
 function editItemStatus(ci, gi, ii, el) {
   const item = dashboardData.cards[ci].grupos[gi].itens[ii];
-  const raiz = dashboardData.raizes[item.raiz];
+  const raiz = dashboardData.tipos[item.tipo];
   if (!raiz || raiz.tipo !== 'enum') return;
-  let html = '';
-  for (const estado of raiz.estados) {
-    const sel = item.valor === estado.nome ? ' selected' : '';
-    html += '<div class="edit-popover-option' + sel + '" data-value="' + esc(estado.nome) + '">' +
-      '<span class="legend-dot" style="background:' + estado.cor + '"></span>' + esc(estado.nome) + '</div>';
-  }
+  const html = buildPopoverOptions(null, raiz.estados.map(e => ({
+    value: e.nome, label: e.nome, dotColor: e.cor, selected: item.valor === e.nome
+  })));
   showPopover(el, html, function(e) {
     const opt = e.target.closest('.edit-popover-option');
     if (!opt) return;
@@ -742,16 +765,7 @@ function editHeaderField(field, el) {
 
 function editChartType(ci, chi, el) {
   const grafico = dashboardData.cards[ci].graficos[chi];
-  const tipos = [
-    { v: 'pizza', l: 'Pizza', d: 'Ideal para dados categoricos (enum)' },
-    { v: 'barras', l: 'Barras', d: 'Ideal para valores numericos' },
-    { v: 'linhas', l: 'Linhas', d: 'Ideal para series temporais/evolucao' }
-  ];
-  let html = '';
-  for (const t of tipos) {
-    const sel = grafico.tipo === t.v ? ' selected' : '';
-    html += '<div class="edit-popover-option' + sel + '" data-value="' + t.v + '"><div><strong>' + t.l + '</strong><br><span style="font-size:10px;color:var(--text3)">' + t.d + '</span></div></div>';
-  }
+  const html = buildPopoverOptions(null, TIPOS_GRAFICO.map(t => ({ ...t, selected: grafico.tipo === t.value })));
   showPopover(el, html, function(e) {
     const opt = e.target.closest('.edit-popover-option');
     if (!opt) return;
@@ -764,13 +778,8 @@ function editChartType(ci, chi, el) {
 function editChartData(ci, chi, el) {
   const card = dashboardData.cards[ci];
   const grafico = card.graficos[chi];
-  let html = '<div class="popover-title">Grupos de dados</div>';
-  for (let gi = 0; gi < card.grupos.length; gi++) {
-    const nome = card.grupos[gi].nome;
-    const chk = grafico.gruposRef.includes(nome) ? ' checked' : '';
-    html += '<label class="popover-check"><input type="checkbox" data-grupo="' + gi + '"' + chk + '> ' + esc(nome) + '</label>';
-  }
-  html += '<div class="popover-actions"><button class="btn popover-btn" data-action="confirm">Confirmar</button></div>';
+  const checkedIdxs = card.grupos.map((g, i) => grafico.gruposRef.includes(g.nome) ? i : -1).filter(i => i >= 0);
+  const html = buildPopoverChecklist('Grupos de dados', card.grupos.map(g => g.nome), checkedIdxs);
   showPopover(el, html, function(e) {
     if (e.target.closest('[data-action="confirm"]')) {
       const pop = e.target.closest('.edit-popover');
@@ -797,7 +806,7 @@ function getAllGroupNames() {
 
 function getAllStateNames() {
   const states = [];
-  for (const raiz of Object.values(dashboardData.raizes))
+  for (const raiz of Object.values(dashboardData.tipos))
     if (raiz.tipo === 'enum')
       for (const e of raiz.estados)
         if (!states.includes(e.nome)) states.push(e.nome);
@@ -807,6 +816,34 @@ function getAllStateNames() {
 function buildOptions(items, selected, emptyLabel) {
   let html = emptyLabel ? '<option value=""' + (!selected ? ' selected' : '') + '>' + emptyLabel + '</option>' : '';
   for (const item of items) html += '<option value="' + esc(item) + '"' + (selected === item ? ' selected' : '') + '>' + esc(item) + '</option>';
+  return html;
+}
+
+function buildPopoverOptions(title, items) {
+  let html = title ? '<div class="popover-title">' + esc(title) + '</div>' : '';
+  for (const item of items) {
+    const attrs = item.action
+      ? ' data-action="' + esc(item.action) + '"'
+      : ' data-value="' + esc(item.value !== undefined ? item.value : '') + '"';
+    const cls = 'edit-popover-option' + (item.selected ? ' selected' : '') + (item.extraClass ? ' ' + item.extraClass : '');
+    html += '<div class="' + cls + '"' + attrs + '>';
+    if (item.dotColor) html += '<span class="legend-dot" style="background:' + item.dotColor + '"></span>';
+    if (item.desc) {
+      html += '<div><strong>' + esc(item.label) + '</strong><br><span style="font-size:10px;color:var(--text3)">' + esc(item.desc) + '</span></div>';
+    } else {
+      html += esc(item.label);
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+function buildPopoverChecklist(title, items, checkedIdxs) {
+  let html = '<div class="popover-title">' + esc(title) + '</div>';
+  for (let i = 0; i < items.length; i++) {
+    html += '<label class="popover-check"><input type="checkbox" data-grupo="' + i + '"' + (checkedIdxs.includes(i) ? ' checked' : '') + '> ' + esc(items[i]) + '</label>';
+  }
+  html += '<div class="popover-actions"><button class="btn popover-btn" data-action="confirm">Confirmar</button></div>';
   return html;
 }
 
@@ -916,38 +953,36 @@ function addItem(ci, gi, anchorEl) {
   const grupo = dashboardData.cards[ci].grupos[gi];
   if (grupo.itens.length > 0) {
     const raizName = grupo.itens[0].raiz;
-    const raiz = dashboardData.raizes[raizName];
+    const raiz = dashboardData.tipos[raizName];
     const def = raiz.tipo === 'enum' ? (raiz.estados[0]?.nome || '') : '0';
-    grupo.itens.push({ raiz: raizName, nome: 'Novo item', valor: def, nota: '' });
+    grupo.itens.push({ tipo: raizName, nome: 'Novo item', valor: def, nota: '' });
     renderDashboard(dashboardData);
     return;
   }
-  const raizNames = Object.keys(dashboardData.raizes);
-  let html = '<div class="popover-title">Tipo do item</div>';
-  for (const name of raizNames) {
-    const raiz = dashboardData.raizes[name];
-    const desc = raiz.tipo === 'enum' ? 'enum (' + raiz.estados.map(e => e.nome).join(', ') + ')' : 'numero (' + raiz.unidade + ')';
-    html += '<div class="edit-popover-option" data-value="' + esc(name) + '"><div><strong>' + esc(name) + '</strong><br><span style="font-size:10px;color:var(--text3)">' + esc(desc) + '</span></div></div>';
-  }
-  html += '<div class="edit-popover-option popover-option-create" data-action="create-raiz">+ Criar novo TIPO</div>';
+  const raizItems = Object.entries(dashboardData.tipos).map(([name, raiz]) => ({
+    value: name, label: name,
+    desc: raiz.tipo === 'enum' ? 'enum (' + raiz.estados.map(e => e.nome).join(', ') + ')' : 'numero (' + raiz.unidade + ')'
+  }));
+  raizItems.push({ action: 'create-raiz', label: '+ Criar novo TIPO', extraClass: 'popover-option-create' });
+  const html = buildPopoverOptions('Tipo do item', raizItems);
   showPopover(anchorEl, html, function(e) {
     const opt = e.target.closest('.edit-popover-option');
     if (!opt) return;
     if (opt.dataset.action === 'create-raiz') {
       removePopover();
-      openCreateRaizPopover(anchorEl, function(raizName) {
-        const raiz = dashboardData.raizes[raizName];
+      openCreateTipoPopover(anchorEl, function(raizName) {
+        const raiz = dashboardData.tipos[raizName];
         const def = raiz.tipo === 'enum' ? (raiz.estados[0]?.nome || '') : '0';
-        grupo.itens.push({ raiz: raizName, nome: 'Novo item', valor: def, nota: '' });
+        grupo.itens.push({ tipo: raizName, nome: 'Novo item', valor: def, nota: '' });
         renderDashboard(dashboardData);
       });
       return;
     }
     const raizName = opt.dataset.value;
     if (!raizName) return;
-    const raiz = dashboardData.raizes[raizName];
+    const raiz = dashboardData.tipos[raizName];
     const def = raiz.tipo === 'enum' ? (raiz.estados[0]?.nome || '') : '0';
-    grupo.itens.push({ raiz: raizName, nome: 'Novo item', valor: def, nota: '' });
+    grupo.itens.push({ tipo: raizName, nome: 'Novo item', valor: def, nota: '' });
     removePopover();
     renderDashboard(dashboardData);
   });
@@ -984,46 +1019,308 @@ function removeCard(ci) {
   renderDashboard(dashboardData);
 }
 
-function openCreateRaizPopover(anchorEl, callback) {
-  let html = '<div class="popover-title">Novo TIPO</div>' +
-    '<div class="popover-form">' +
-    '<input type="text" class="inline-edit popover-input" placeholder="Nome (ex: tarefa)" data-field="raiz-name">' +
-    '<div class="popover-radios">' +
-    '<label><input type="radio" name="raiz-tipo" value="enum" checked> Enum</label>' +
-    '<label><input type="radio" name="raiz-tipo" value="numero"> Numero</label>' +
-    '</div>' +
-    '<div data-container="raiz-config">' +
-    '<input type="text" class="inline-edit popover-input" placeholder="estado1: #cor1, estado2: #cor2" data-field="raiz-estados">' +
-    '</div>' +
-    '<button class="btn popover-btn" data-action="create-raiz">Criar</button>' +
-    '</div>';
+const COLOR_PRESETS = ['#1D9E75','#378ADD','#BA7517','#7F77DD','#EF4444','#F97316','#94A3B8','#0F172A'];
+
+function hexToHSV(hex) {
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+  const r=parseInt(hex.slice(0,2),16)/255, g=parseInt(hex.slice(2,4),16)/255, b=parseInt(hex.slice(4,6),16)/255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+  let h=0;
+  if(d){ if(max===r) h=((g-b)/d%6+6)%6; else if(max===g) h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; }
+  return { h, s: max?d/max:0, v: max };
+}
+
+function hsvToHex(h,s,v) {
+  const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1));};
+  const x=n=>Math.round(Math.max(0,Math.min(1,f(n)))*255).toString(16).padStart(2,'0');
+  return '#'+x(5)+x(3)+x(1);
+}
+
+function initColorWheel(canvas, initialHex, onChange) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, cx = W/2, cy = H/2;
+  const outerR = cx - 4, innerR = outerR * 0.72;
+  const halfSq = (innerR * Math.SQRT2) / 2;
+  let {h, s, v} = hexToHSV(initialHex);
+  let dragging = null;
+
+  function drawWheel() {
+    for (let i = 0; i < 360; i++) {
+      const a1 = (i/360)*Math.PI*2 - Math.PI/2;
+      const a2 = ((i+1)/360)*Math.PI*2 - Math.PI/2;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a1)*innerR, cy+Math.sin(a1)*innerR);
+      ctx.arc(cx, cy, outerR, a1, a2);
+      ctx.arc(cx, cy, innerR, a2, a1, true);
+      ctx.closePath();
+      ctx.fillStyle = 'hsl('+i+',100%,50%)';
+      ctx.fill();
+    }
+  }
+
+  function drawSquare() {
+    const x0=cx-halfSq, y0=cy-halfSq, sz=halfSq*2;
+    const gH=ctx.createLinearGradient(x0,0,x0+sz,0);
+    gH.addColorStop(0,'#fff'); gH.addColorStop(1,'hsl('+h+',100%,50%)');
+    ctx.fillStyle=gH; ctx.fillRect(x0,y0,sz,sz);
+    const gV=ctx.createLinearGradient(0,y0,0,y0+sz);
+    gV.addColorStop(0,'rgba(0,0,0,0)'); gV.addColorStop(1,'#000');
+    ctx.fillStyle=gV; ctx.fillRect(x0,y0,sz,sz);
+  }
+
+  function drawCursors() {
+    const hAngle=(h/360)*Math.PI*2 - Math.PI/2;
+    const ringR=(outerR+innerR)/2;
+    const hx=cx+Math.cos(hAngle)*ringR, hy=cy+Math.sin(hAngle)*ringR;
+    [['#fff',8,2.5],['rgba(0,0,0,.4)',7,1]].forEach(([c,r,w])=>{
+      ctx.beginPath(); ctx.arc(hx,hy,r,0,Math.PI*2);
+      ctx.strokeStyle=c; ctx.lineWidth=w; ctx.stroke();
+    });
+    const sx=cx-halfSq+s*halfSq*2, sy=cy-halfSq+(1-v)*halfSq*2;
+    [['#fff',7,2],['rgba(0,0,0,.4)',6,1]].forEach(([c,r,w])=>{
+      ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2);
+      ctx.strokeStyle=c; ctx.lineWidth=w; ctx.stroke();
+    });
+  }
+
+  function redraw() {
+    ctx.clearRect(0,0,W,H);
+    drawWheel(); drawSquare(); drawCursors();
+    onChange(hsvToHex(h,s,v));
+  }
+
+  function xy(e) {
+    const r=canvas.getBoundingClientRect();
+    const ev=e.touches?e.touches[0]:e;
+    return { x:(ev.clientX-r.left)*(W/r.width), y:(ev.clientY-r.top)*(H/r.height) };
+  }
+
+  function onDown(e) {
+    const {x,y}=xy(e), dx=x-cx, dy=y-cy, dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>=innerR&&dist<=outerR) dragging='wheel';
+    else if(Math.abs(dx)<=halfSq&&Math.abs(dy)<=halfSq) dragging='sq';
+    if(dragging) onMove(e);
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if(!dragging) return;
+    const {x,y}=xy(e.touches?e:e), dx=x-cx, dy=y-cy;
+    if(dragging==='wheel') h=((Math.atan2(dy,dx)+Math.PI/2+Math.PI*2)%(Math.PI*2))/(Math.PI*2)*360;
+    else { s=Math.max(0,Math.min(1,(x-(cx-halfSq))/(halfSq*2))); v=Math.max(0,Math.min(1,1-(y-(cy-halfSq))/(halfSq*2))); }
+    redraw(); e.preventDefault();
+  }
+
+  function onUp() { dragging=null; }
+
+  canvas.addEventListener('mousedown', onDown);
+  canvas.addEventListener('touchstart', onDown, {passive:false});
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('touchmove', onMove, {passive:false});
+  window.addEventListener('mouseup', onUp);
+  window.addEventListener('touchend', onUp);
+  canvas._cleanup = ()=>{
+    window.removeEventListener('mousemove',onMove);
+    window.removeEventListener('touchmove',onMove);
+    window.removeEventListener('mouseup',onUp);
+    window.removeEventListener('touchend',onUp);
+  };
+  redraw();
+  return { setHex(hex){ const c=hexToHSV(hex); h=c.h; s=c.s; v=c.v; redraw(); } };
+}
+
+function colorPickerPopover(anchorEl, title, currentColor, onApply) {
+  const presetsHTML = COLOR_PRESETS.map(c =>
+    '<span class="color-preset" style="background:' + c + '" data-color="' + c + '"></span>'
+  ).join('');
+  const html =
+    '<div class="popover-title">' + esc(title) + '</div>' +
+    '<div class="color-wheel-wrap"><canvas class="color-wheel-canvas" width="180" height="180"></canvas>' +
+    '<div class="color-picker-row">' +
+    '<span class="color-picker-swatch" style="background:' + esc(currentColor) + '"></span>' +
+    '<input type="text" class="inline-edit color-hex-input" value="' + esc(currentColor) + '" maxlength="7" placeholder="#000000">' +
+    '<button class="btn popover-btn" data-action="apply-color" style="width:auto;padding:4px 10px">OK</button>' +
+    '</div></div>' +
+    '<div class="color-presets-row">' + presetsHTML + '</div>';
+
+  let wheel = null;
 
   showPopover(anchorEl, html, function(e) {
-    const pop = e.target.closest('.edit-popover');
+    const preset = e.target.closest('.color-preset');
+    if (preset) {
+      const c = preset.dataset.color;
+      if (wheel) wheel.setHex(c);
+      updateColorUI(activePopover, c);
+      return;
+    }
+    if (e.target.closest('[data-action="apply-color"]')) {
+      onApply(activePopover.querySelector('.color-hex-input').value);
+      removePopover();
+    }
+  });
+
+  const hexInput = activePopover.querySelector('.color-hex-input');
+  hexInput.addEventListener('input', function() {
+    if (/^#[0-9A-Fa-f]{6}$/.test(this.value)) {
+      if (wheel) wheel.setHex(this.value);
+      const sw = activePopover.querySelector('.color-picker-swatch');
+      if (sw) sw.style.background = this.value;
+    }
+  });
+
+  wheel = initColorWheel(activePopover.querySelector('.color-wheel-canvas'), currentColor, function(hex) {
+    updateColorUI(activePopover, hex);
+  });
+}
+
+function updateColorUI(pop, hex) {
+  const sw = pop.querySelector('.color-picker-swatch');
+  const inp = pop.querySelector('.color-hex-input');
+  if (sw) sw.style.background = hex;
+  if (inp && document.activeElement !== inp) inp.value = hex;
+}
+
+function editCardColor(ci, el) {
+  const card = dashboardData.cards[ci];
+  colorPickerPopover(el, 'Cor do card', card.cor, function(color) {
+    card.cor = color;
+    renderDashboard(dashboardData);
+  });
+}
+
+function editLegendColor(label, el) {
+  let currentColor = '#94A3B8';
+  for (const raiz of Object.values(dashboardData.tipos)) {
+    if (raiz.tipo !== 'enum') continue;
+    const estado = raiz.estados.find(e => e.nome === label);
+    if (estado) { currentColor = estado.cor; break; }
+  }
+  colorPickerPopover(el, 'Cor: ' + label, currentColor, function(color) {
+    for (const raiz of Object.values(dashboardData.tipos)) {
+      if (raiz.tipo !== 'enum') continue;
+      const estado = raiz.estados.find(e => e.nome === label);
+      if (estado) estado.cor = color;
+    }
+    renderDashboard(dashboardData);
+  });
+}
+
+function addChart(ci, anchorEl) {
+  const card = dashboardData.cards[ci];
+  const html = buildPopoverOptions('Tipo de grafico', TIPOS_GRAFICO);
+  showPopover(anchorEl, html, function(e) {
+    const opt = e.target.closest('.edit-popover-option');
+    if (!opt) return;
+    card.graficos.push({ tipo: opt.dataset.value, gruposRef: [] });
+    removePopover();
+    renderDashboard(dashboardData);
+  });
+}
+
+function removeChart(ci, gri) {
+  dashboardData.cards[ci].graficos.splice(gri, 1);
+  renderDashboard(dashboardData);
+}
+
+function openCreateTipoPopover(anchorEl, callback) {
+  let tipoAtual = 'enum';
+  let estados = [
+    { cor: COLOR_PRESETS[0], nome: '' },
+    { cor: COLOR_PRESETS[1], nome: '' }
+  ];
+
+  function syncFromDOM() {
+    if (!activePopover) return;
+    activePopover.querySelectorAll('.raiz-estado-row').forEach((row, i) => {
+      if (estados[i]) {
+        estados[i].cor = row.querySelector('.raiz-estado-cor').value;
+        estados[i].nome = row.querySelector('.raiz-estado-nome').value;
+      }
+    });
+  }
+
+  function buildConfig() {
+    if (tipoAtual !== 'enum') {
+      return '<input type="text" class="inline-edit popover-input" placeholder="Unidade (ex: ton, R$, %)" data-field="tipo-unidade">';
+    }
+    let rows = '';
+    for (let i = 0; i < estados.length; i++) {
+      rows += '<div class="raiz-estado-row">' +
+        '<input type="color" class="raiz-estado-cor" value="' + estados[i].cor + '">' +
+        '<input type="text" class="inline-edit raiz-estado-nome" placeholder="Nome do estado" value="' + esc(estados[i].nome) + '">' +
+        '<button class="edit-action-remove" data-action="rm-estado" data-idx="' + i + '">&times;</button>' +
+        '</div>';
+    }
+    return '<div class="raiz-estados-list">' + rows + '</div>' +
+      '<button class="raiz-add-estado" data-action="add-estado">+ Adicionar estado</button>';
+  }
+
+  function buildHTML(nameVal, unidadeVal) {
+    return '<div class="popover-title">Novo TIPO</div>' +
+      '<div class="popover-form">' +
+      '<input type="text" class="inline-edit popover-input" placeholder="Nome (ex: tarefa)" data-field="tipo-name" value="' + esc(nameVal||'') + '">' +
+      '<div class="tipo-btns">' +
+      '<button class="btn' + (tipoAtual==='enum'?' btn-primary':'') + '" data-tipo="enum">Enum</button>' +
+      '<button class="btn' + (tipoAtual==='numero'?' btn-primary':'') + '" data-tipo="numero">Numero</button>' +
+      '</div>' +
+      '<div class="raiz-config">' + buildConfig() + '</div>' +
+      '<button class="btn popover-btn" data-action="create-tipo">Criar</button>' +
+      '</div>';
+  }
+
+  function rerender() {
+    if (!activePopover) return;
+    const nameVal = activePopover.querySelector('[data-field="tipo-name"]')?.value || '';
+    const unidadeVal = activePopover.querySelector('[data-field="tipo-unidade"]')?.value || '';
+    activePopover.querySelector('.raiz-config').innerHTML = buildConfig();
+    if (unidadeVal && activePopover.querySelector('[data-field="tipo-unidade"]'))
+      activePopover.querySelector('[data-field="tipo-unidade"]').value = unidadeVal;
+  }
+
+  showPopover(anchorEl, buildHTML(), function(e) {
+    const pop = activePopover;
     if (!pop) return;
 
-    if (e.target.name === 'raiz-tipo') {
-      const container = pop.querySelector('[data-container="raiz-config"]');
-      container.innerHTML = e.target.value === 'enum'
-        ? '<input type="text" class="inline-edit popover-input" placeholder="estado1: #cor1, estado2: #cor2" data-field="raiz-estados">'
-        : '<input type="text" class="inline-edit popover-input" placeholder="Unidade (ex: ton, R$, %)" data-field="raiz-unidade">';
+    const tipoBtnEl = e.target.closest('[data-tipo]');
+    if (tipoBtnEl) {
+      e.stopPropagation();
+      syncFromDOM();
+      tipoAtual = tipoBtnEl.dataset.tipo;
+      pop.querySelectorAll('[data-tipo]').forEach(b => b.classList.toggle('btn-primary', b.dataset.tipo === tipoAtual));
+      rerender();
+      return;
     }
 
-    if (e.target.closest('[data-action="create-raiz"]')) {
-      const name = pop.querySelector('[data-field="raiz-name"]')?.value.trim();
+    if (e.target.closest('[data-action="add-estado"]')) {
+      e.stopPropagation();
+      syncFromDOM();
+      estados.push({ cor: COLOR_PRESETS[estados.length % COLOR_PRESETS.length], nome: '' });
+      rerender();
+      return;
+    }
+
+    const rmEl = e.target.closest('[data-action="rm-estado"]');
+    if (rmEl) {
+      e.stopPropagation();
+      syncFromDOM();
+      estados.splice(parseInt(rmEl.dataset.idx), 1);
+      if (!estados.length) estados.push({ cor: COLOR_PRESETS[0], nome: '' });
+      rerender();
+      return;
+    }
+
+    if (e.target.closest('[data-action="create-tipo"]')) {
+      const name = pop.querySelector('[data-field="tipo-name"]')?.value.trim();
       if (!name) return;
-      const tipo = pop.querySelector('input[name="raiz-tipo"]:checked').value;
-      if (tipo === 'enum') {
-        const str = pop.querySelector('[data-field="raiz-estados"]')?.value.trim();
-        if (!str) return;
-        const estados = str.split(',').map(s => s.trim()).map(s => {
-          const m = s.match(/^(.+):\s*(#[0-9A-Fa-f]{3,8})$/);
-          return m ? { nome: m[1].trim(), cor: m[2] } : null;
-        }).filter(Boolean);
-        if (estados.length === 0) return;
-        dashboardData.raizes[name] = { tipo: 'enum', estados };
+      if (tipoAtual === 'enum') {
+        syncFromDOM();
+        const validos = estados.filter(e => e.nome.trim());
+        if (!validos.length) return;
+        dashboardData.tipos[name] = { tipo: 'enum', estados: validos };
       } else {
-        dashboardData.raizes[name] = { tipo: 'numero', unidade: pop.querySelector('[data-field="raiz-unidade"]')?.value.trim() || '' };
+        const unidade = pop.querySelector('[data-field="tipo-unidade"]')?.value.trim() || '';
+        dashboardData.tipos[name] = { tipo: 'numero', unidade };
       }
       removePopover();
       if (callback) callback(name);
@@ -1044,12 +1341,15 @@ function handleGridClick(e) {
     const ci = parseInt(actionEl.dataset.cardIdx);
     const gi = actionEl.dataset.groupIdx !== undefined ? parseInt(actionEl.dataset.groupIdx) : -1;
     const ii = actionEl.dataset.itemIdx !== undefined ? parseInt(actionEl.dataset.itemIdx) : -1;
+    const gri = actionEl.dataset.chartIdx !== undefined ? parseInt(actionEl.dataset.chartIdx) : -1;
     if (action === 'remove-card') removeCard(ci);
     else if (action === 'remove-group') removeGroup(ci, gi);
     else if (action === 'remove-item') removeItem(ci, gi, ii);
+    else if (action === 'remove-chart') removeChart(ci, gri);
     else if (action === 'add-item') addItem(ci, gi, actionEl);
     else if (action === 'add-group') addGroup(ci);
     else if (action === 'add-card') addCard();
+    else if (action === 'add-chart') addChart(ci, actionEl);
     return;
   }
   const editEl = e.target.closest('[data-editable]');
@@ -1066,6 +1366,8 @@ function handleGridClick(e) {
   else if (type === 'item-name') editItemName(ci, gi, ii, editEl);
   else if (type === 'group-name') editGroupName(ci, gi, editEl);
   else if (type === 'card-name') editCardName(ci, editEl);
+  else if (type === 'card-color') editCardColor(ci, editEl);
+  else if (type === 'legend-color') editLegendColor(editEl.dataset.label, editEl);
   else if (type === 'chart-type') editChartType(ci, chi, editEl);
   else if (type === 'chart-data') editChartData(ci, chi, editEl);
 }
@@ -1211,6 +1513,23 @@ CARD Exemplo Linha | cor: #7F77DD
    AÇÕES
    ══════════════════════════════════════════ */
 
+function createFromScratch() {
+  const data = {
+    marca: 'Marca',
+    titulo: 'Novo Dashboard',
+    subtitulo: 'Subtitulo',
+    tipos: {},
+    cabecalho: [],
+    cards: []
+  };
+  dataSnapshot = JSON.parse(JSON.stringify(data));
+  dashboardData = data;
+  editMode = true;
+  viewMode = false;
+  updateModeUI();
+  renderDashboard(dashboardData);
+}
+
 function downloadTemplate() {
   const blob = new Blob([generateTemplate()], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
@@ -1264,8 +1583,187 @@ function downloadEditedTXT() {
   URL.revokeObjectURL(a.href);
 }
 
+/* ── PDF helpers ── */
+function _pdfChartCfg(tipo, chartData) {
+  const silent = { animation: false, responsive: false, plugins: { legend: { display: false } } };
+  const tick = { color: '#64748B', font: { size: 9 } };
+  const gridColor = { color: '#E2E8F0' };
+  if (tipo === 'pizza') return {
+    type: 'pie',
+    data: { labels: chartData.labels, datasets: [{ data: chartData.values, backgroundColor: chartData.colors, borderColor: '#fff', borderWidth: 2 }] },
+    options: silent
+  };
+  if (tipo === 'barras') return {
+    type: 'bar',
+    data: { labels: chartData.labels, datasets: [{ data: chartData.values, backgroundColor: chartData.colors, borderRadius: 3 }] },
+    options: { ...silent, scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } } }
+  };
+  return {
+    type: 'line',
+    data: { labels: chartData.labels, datasets: [{ data: chartData.values, borderColor: chartData.colors[0] || '#378ADD', backgroundColor: (chartData.colors[0] || '#378ADD') + '30', fill: true, tension: 0.3, pointRadius: 3 }] },
+    options: { ...silent, scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } } }
+  };
+}
+
+function _pdfChartImg(tipo, chartData) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 280; canvas.height = 240;
+  const chart = new Chart(canvas, _pdfChartCfg(tipo, chartData));
+  const dataUrl = canvas.toDataURL('image/png');
+  chart.destroy();
+  return dataUrl;
+}
+
+function _pdfKpiBlock(kpi, data) {
+  const val = String(calcKPI(kpi, data));
+  const subs = (data.cabecalho || []).filter(k => k.incluir === kpi.label);
+  const stack = [
+    { text: (kpi.label || '').toUpperCase(), style: 'kpiLabel' },
+    { text: val, style: 'kpiValue', marginTop: 2 }
+  ];
+  if (kpi.sub) stack.push({ text: kpi.sub, style: 'kpiSub', marginTop: 1 });
+  if (subs.length) stack.push({
+    table: {
+      widths: ['*', 'auto'],
+      body: subs.map(s => [
+        { text: s.label, style: 'kpiSubLabel', border: [false,false,false,false] },
+        { text: String(calcKPI(s, data)), style: 'kpiSubVal', border: [false,false,false,false] }
+      ])
+    },
+    layout: 'noBorders', marginTop: 4
+  });
+  return { stack };
+}
+
+function _pdfCardBlock(card, chartImgs) {
+  const tipos = dashboardData.tipos;
+  const itemsStack = [];
+  for (const grupo of card.grupos) {
+    if (!grupo.itens.length) continue;
+    if (itemsStack.length) itemsStack.push({ text: '', margin: [0, 4, 0, 0] });
+    itemsStack.push({ text: grupo.nome.toUpperCase(), style: 'groupLabel' });
+    for (const item of grupo.itens) {
+      const tipo = tipos[item.tipo];
+      let dot = '#94A3B8';
+      let valText = item.valor;
+      if (tipo?.tipo === 'enum') {
+        const e = tipo.estados.find(e => e.nome === item.valor);
+        if (e) dot = e.cor;
+      } else if (tipo?.tipo === 'numero') {
+        valText = item.valor + (tipo.unidade ? ' ' + tipo.unidade : '');
+      }
+      itemsStack.push({
+        columns: [
+          { canvas: [{ type: 'rect', x: 0, y: 2.5, w: 5, h: 5, r: 1, color: dot }], width: 9 },
+          { text: item.nome, style: 'itemName', width: '*' },
+          { text: valText, style: 'itemVal', width: 'auto' }
+        ],
+        columnGap: 3, marginBottom: 2
+      });
+    }
+  }
+
+  const chartsCol = chartImgs.length
+    ? { stack: chartImgs.map(img => ({ image: img, width: 128, margin: [0, 0, 0, 4] })), width: 134 }
+    : null;
+  const itemsCol = itemsStack.length ? { stack: itemsStack, width: '*' } : { text: '', width: '*' };
+
+  return {
+    table: {
+      widths: ['*'],
+      body: [[{
+        stack: [
+          { text: card.nome, style: 'cardTitle', marginBottom: 5 },
+          chartsCol
+            ? { columns: [chartsCol, itemsCol], columnGap: 6 }
+            : itemsCol
+        ],
+        margin: [8, 6, 8, 8]
+      }]]
+    },
+    layout: {
+      hLineWidth: () => 0,
+      vLineWidth: (i) => i === 0 ? 3 : 0,
+      vLineColor: () => card.cor || '#378ADD'
+    },
+    marginBottom: 8
+  };
+}
+
 function exportPDF() {
-  window.print();
+  const btn = document.getElementById('btn-pdf');
+  btn.textContent = 'Gerando...';
+  btn.disabled = true;
+
+  try {
+    const data = dashboardData;
+
+    const cardChartImgs = data.cards.map(card =>
+      (card.graficos || []).map(g => _pdfChartImg(g.tipo, collectChartData(card, g, data.tipos)))
+    );
+
+    const topKpis = (data.cabecalho || []).filter(k => !k.incluir);
+    const kpiCols = topKpis.map(k => _pdfKpiBlock(k, data));
+
+    const cardRows = [];
+    for (let i = 0; i < data.cards.length; i += 2) {
+      const left = _pdfCardBlock(data.cards[i], cardChartImgs[i]);
+      const right = i + 1 < data.cards.length
+        ? _pdfCardBlock(data.cards[i + 1], cardChartImgs[i + 1])
+        : { text: '' };
+      cardRows.push({ columns: [left, right], columnGap: 10, marginBottom: 4 });
+    }
+
+    const divider = {
+      table: { widths: ['*'], body: [[{ text: '', border: [false,false,false,false] }]] },
+      layout: { hLineWidth: (i) => i === 1 ? 0.5 : 0, vLineWidth: () => 0, hLineColor: () => '#E2E8F0', paddingTop: () => 0, paddingBottom: () => 0, paddingLeft: () => 0, paddingRight: () => 0 },
+      margin: [0, 4, 0, 8]
+    };
+
+    const docDef = {
+      pageOrientation: 'landscape',
+      pageSize: 'A4',
+      pageMargins: [24, 24, 24, 24],
+      defaultStyle: { font: 'Roboto', fontSize: 9, color: '#334155' },
+      content: [
+        {
+          columns: [{
+            stack: [
+              { text: [{ text: data.marca ? data.marca + '  ' : '', style: 'brand' }, { text: data.titulo || '', style: 'titulo' }] },
+              { text: data.subtitulo || '', style: 'subtitulo', marginTop: 1 }
+            ], width: '*'
+          }], marginBottom: 6
+        },
+        divider,
+        ...(kpiCols.length ? [{ columns: kpiCols, columnGap: 8, marginBottom: 10 }, divider] : []),
+        ...cardRows
+      ],
+      styles: {
+        brand:      { fontSize: 8, bold: true, color: '#94A3B8' },
+        titulo:     { fontSize: 13, bold: true, color: '#0F172A' },
+        subtitulo:  { fontSize: 9, color: '#64748B' },
+        cardTitle:  { fontSize: 10, bold: true, color: '#0F172A' },
+        groupLabel: { fontSize: 7, bold: true, color: '#94A3B8' },
+        itemName:   { fontSize: 8, color: '#334155' },
+        itemVal:    { fontSize: 8, color: '#64748B' },
+        kpiLabel:   { fontSize: 7, bold: true, color: '#94A3B8' },
+        kpiValue:   { fontSize: 17, bold: true, color: '#0F172A' },
+        kpiSub:     { fontSize: 8, color: '#64748B' },
+        kpiSubLabel:{ fontSize: 8, color: '#64748B' },
+        kpiSubVal:  { fontSize: 8, bold: true, color: '#334155' }
+      }
+    };
+
+    const title = (data.titulo || 'dashboard').replace(/\s+/g, '_').toLowerCase();
+    pdfMake.createPdf(docDef).download(title + '.pdf');
+
+  } catch (err) {
+    console.error('Erro ao gerar PDF:', err);
+    alert('Erro ao gerar PDF: ' + err.message);
+  } finally {
+    btn.textContent = 'Exportar PDF';
+    btn.disabled = false;
+  }
 }
 
 /* ══════════════════════════════════════════
