@@ -1397,7 +1397,10 @@ function openLinhaModal(ci) {
     renderDashboard(dashboardData);
   }
 
+  const _lmAbort = new AbortController();
+
   function _closeLinhaModal() {
+    _lmAbort.abort();
     if (_linhasModalChart) { _linhasModalChart.destroy(); _linhasModalChart = null; }
     document.querySelector('.modal').classList.remove('modal-linhas');
     document.querySelector('.modal-close').setAttribute('onclick', 'closeModal()');
@@ -1418,7 +1421,7 @@ function openLinhaModal(ci) {
   const nomeInput = document.getElementById('lm-nome');
   if (nomeInput) nomeInput.addEventListener('input', function() { currDs().nome = this.value; });
 
-  // Handler delegado — sobrevive a refreshes (o #modal-body não é substituído, só o innerHTML)
+  // Handler delegado — AbortController garante que apenas um listener ativo por sessão
   document.getElementById('modal-body').addEventListener('click', function(e) {
     const selDs = e.target.closest('[data-action="sel-ds"]');
     if (selDs && !e.target.closest('[data-action="rm-ds"]')) {
@@ -1463,7 +1466,7 @@ function openLinhaModal(ci) {
         currDs().grupoNome = n; refresh();
       }
     }
-  });
+  }, { signal: _lmAbort.signal });
 }
 
 function openCreateTipoPopover(anchorEl, callback, fixedTipo) {
