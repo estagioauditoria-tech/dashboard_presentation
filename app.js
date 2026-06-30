@@ -657,7 +657,7 @@ function openFinalizarModal() {
   const txt = exportTXT(dashboardData);
   const bodyHTML = '<textarea readonly class="modal-textarea">' + esc(txt) + '</textarea>';
   let footer = '';
-  if (viewMode) footer += '<button class="btn" onclick="backToEdit()">Voltar a editar</button>';
+  if (viewMode) footer += '<button class="btn btn-ghost" onclick="backToEdit()">Voltar a editar</button>';
   footer += '<button class="btn btn-danger" onclick="discardEdits()">Descartar</button>';
   footer += '<button class="btn" onclick="enterViewMode()">Visualizar</button>';
   footer += '<button class="btn" onclick="downloadEditedTXT()">Baixar TXT</button>';
@@ -1247,9 +1247,13 @@ function addChart(ci, anchorEl) {
   showPopover(anchorEl, html, function(e) {
     const opt = e.target.closest('.edit-popover-option');
     if (!opt) return;
-    card.graficos.push({ tipo: opt.dataset.value, gruposRef: [] });
     removePopover();
-    renderDashboard(dashboardData);
+    if (opt.dataset.value === 'linhas') {
+      openLinhaModal(ci);
+    } else {
+      card.graficos.push({ tipo: opt.dataset.value, gruposRef: [] });
+      renderDashboard(dashboardData);
+    }
   });
 }
 
@@ -1258,8 +1262,212 @@ function removeChart(ci, gri) {
   renderDashboard(dashboardData);
 }
 
-function openCreateTipoPopover(anchorEl, callback) {
-  let tipoAtual = 'enum';
+/* ── Modal: Novo gráfico de linhas ── */
+let _linhasModalChart = null;
+
+function openLinhaModal(ci) {
+  const card = dashboardData.cards[ci];
+
+  const state = {
+    xEnumKey: null,
+    selectedIdx: 0,
+    datasets: [{ nome: 'Dataset 1', tipoYKey: null, grupoNome: null, color: COLOR_PRESETS[0] }]
+  };
+
+  function enumKeys() { return Object.keys(dashboardData.tipos).filter(k => dashboardData.tipos[k].tipo === 'enum'); }
+  function numeroKeys() { return Object.keys(dashboardData.tipos).filter(k => dashboardData.tipos[k].tipo === 'numero'); }
+  function currDs() { return state.datasets[state.selectedIdx]; }
+
+  function buildBody() {
+    const ds = currDs();
+
+    const xBtns = enumKeys().map(k =>
+      '<button class="lm-tipo-btn' + (state.xEnumKey === k ? ' lm-active' : '') + '" data-action="set-x" data-key="' + esc(k) + '">' +
+      '<span class="lm-tag lm-tag-enum">enum</span>' + esc(k) + '</button>'
+    ).join('') + '<button class="lm-tipo-btn lm-dashed" data-action="create-x">+ enum</button>';
+
+    const yBtns = numeroKeys().map(k =>
+      '<button class="lm-tipo-btn' + (ds.tipoYKey === k ? ' lm-active' : '') + '" data-action="set-y" data-key="' + esc(k) + '">' +
+      '<span class="lm-tag lm-tag-num">num</span>' + esc(k) + '</button>'
+    ).join('') + '<button class="lm-tipo-btn lm-dashed" data-action="create-y">+ numero</button>';
+
+    const grupoBtns = card.grupos.map(g =>
+      '<button class="lm-tipo-btn' + (ds.grupoNome === g.nome ? ' lm-active' : '') + '" data-action="set-grupo" data-nome="' + esc(g.nome) + '">' +
+      esc(g.nome) + '</button>'
+    ).join('') + '<button class="lm-tipo-btn lm-dashed" data-action="create-grupo">+ grupo</button>';
+
+    const dsTabs = state.datasets.map((d, i) =>
+      '<div class="lm-ds-tab' + (i === state.selectedIdx ? ' lm-active' : '') + '" data-action="sel-ds" data-idx="' + i + '">' +
+      '<span class="lm-ds-dot" style="background:' + d.color + '"></span>' +
+      '<span class="lm-ds-label">' + esc(d.nome) + '</span>' +
+      (state.datasets.length > 1 ? '<span class="lm-ds-rm" data-action="rm-ds" data-idx="' + i + '">&times;</span>' : '') +
+      '</div>'
+    ).join('') + '<div class="lm-ds-tab lm-dashed" data-action="add-ds">+</div>';
+
+    return '<div class="lm-body">' +
+      '<div class="lm-left"><canvas id="lm-canvas"></canvas></div>' +
+      '<div class="lm-right">' +
+        '<div>' +
+          '<div class="lm-label">Eixo X <span class="lm-hint">todos os datasets</span></div>' +
+          '<div class="lm-btns">' + xBtns + '</div>' +
+        '</div>' +
+        '<hr class="lm-sep">' +
+        '<div class="lm-ds-row">' + dsTabs + '</div>' +
+        '<div>' +
+          '<div class="lm-label">Nome</div>' +
+          '<input id="lm-nome" class="inline-edit lm-nome-input" value="' + esc(ds.nome) + '">' +
+        '</div>' +
+        '<div>' +
+          '<div class="lm-label">Eixo Y</div>' +
+          '<div class="lm-btns">' + yBtns + '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="lm-label">Grupo de dados</div>' +
+          '<div class="lm-btns">' + grupoBtns + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderPreview() {
+    const canvas = document.getElementById('lm-canvas');
+    if (!canvas) return;
+    if (_linhasModalChart) { _linhasModalChart.destroy(); _linhasModalChart = null; }
+
+    const xEnum = state.xEnumKey ? dashboardData.tipos[state.xEnumKey] : null;
+    const labels = xEnum ? xEnum.estados.map(e => e.nome) : ['A', 'B', 'C', 'D', 'E'];
+
+    const chartDatasets = state.datasets.map(ds => {
+      const grupo = card.grupos.find(g => g.nome === ds.grupoNome);
+      let data;
+      if (grupo && grupo.itens.length && xEnum) {
+        const map = Object.fromEntries(grupo.itens.map(i => [i.nome, parseFloat(i.valor) ?? null]));
+        data = labels.map(l => map[l] ?? null);
+      } else {
+        data = labels.map(() => null);
+      }
+      return {
+        label: ds.nome, data,
+        borderColor: ds.color, backgroundColor: ds.color + '20',
+        fill: state.datasets.length === 1,
+        tension: 0.3, pointRadius: 4, spanGaps: true
+      };
+    });
+
+    const dark = document.documentElement.classList.contains('dark');
+    const textColor = dark ? '#94A3B8' : '#64748B';
+    const gridColor = dark ? '#334155' : '#E2E8F0';
+
+    _linhasModalChart = new Chart(canvas, {
+      type: 'line',
+      data: { labels, datasets: chartDatasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: state.datasets.length > 1, labels: { color: textColor, font: { size: 11 }, boxWidth: 12, padding: 10 } }
+        },
+        scales: {
+          x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function refresh() {
+    if (_linhasModalChart) { _linhasModalChart.destroy(); _linhasModalChart = null; }
+    document.getElementById('modal-body').innerHTML = buildBody();
+    renderPreview();
+    const nomeInput = document.getElementById('lm-nome');
+    if (nomeInput) nomeInput.addEventListener('input', function() { currDs().nome = this.value; });
+  }
+
+  function confirmLinhas() {
+    if (!state.xEnumKey) { alert('Selecione um TIPO enum para o Eixo X.'); return; }
+    const bad = state.datasets.find(d => !d.tipoYKey);
+    if (bad) { alert('Dataset "' + bad.nome + '" precisa de um TIPO numero para o Eixo Y.'); return; }
+
+    state.datasets.forEach(ds => {
+      if (!ds.grupoNome) ds.grupoNome = ds.nome;
+      if (!card.grupos.find(g => g.nome === ds.grupoNome)) card.grupos.push({ nome: ds.grupoNome, itens: [] });
+    });
+
+    card.graficos.push({ tipo: 'linhas', gruposRef: state.datasets.map(d => d.grupoNome) });
+    _closeLinhaModal();
+    renderDashboard(dashboardData);
+  }
+
+  function _closeLinhaModal() {
+    if (_linhasModalChart) { _linhasModalChart.destroy(); _linhasModalChart = null; }
+    document.querySelector('.modal').classList.remove('modal-linhas');
+    document.querySelector('.modal-close').setAttribute('onclick', 'closeModal()');
+    closeModal();
+  }
+
+  // Abrir modal
+  document.querySelector('.modal').classList.add('modal-linhas');
+  openModal('Novo gráfico de linhas', buildBody(),
+    '<button class="btn btn-ghost" id="lm-cancel">Cancelar</button>' +
+    '<button class="btn btn-primary" id="lm-confirm">Confirmar</button>'
+  );
+  document.getElementById('lm-cancel').onclick = _closeLinhaModal;
+  document.getElementById('lm-confirm').onclick = confirmLinhas;
+  document.querySelector('.modal-close').onclick = _closeLinhaModal;
+  renderPreview();
+
+  const nomeInput = document.getElementById('lm-nome');
+  if (nomeInput) nomeInput.addEventListener('input', function() { currDs().nome = this.value; });
+
+  // Handler delegado — sobrevive a refreshes (o #modal-body não é substituído, só o innerHTML)
+  document.getElementById('modal-body').addEventListener('click', function(e) {
+    const selDs = e.target.closest('[data-action="sel-ds"]');
+    if (selDs && !e.target.closest('[data-action="rm-ds"]')) {
+      state.selectedIdx = parseInt(selDs.dataset.idx); refresh(); return;
+    }
+    const rmDs = e.target.closest('[data-action="rm-ds"]');
+    if (rmDs) {
+      const idx = parseInt(rmDs.dataset.idx);
+      state.datasets.splice(idx, 1);
+      if (state.selectedIdx >= state.datasets.length) state.selectedIdx = state.datasets.length - 1;
+      refresh(); return;
+    }
+    if (e.target.closest('[data-action="add-ds"]')) {
+      const color = COLOR_PRESETS[state.datasets.length % COLOR_PRESETS.length];
+      state.datasets.push({ nome: 'Dataset ' + (state.datasets.length + 1), tipoYKey: null, grupoNome: null, color });
+      state.selectedIdx = state.datasets.length - 1;
+      refresh(); return;
+    }
+    const setX = e.target.closest('[data-action="set-x"]');
+    if (setX) { state.xEnumKey = setX.dataset.key; refresh(); return; }
+    if (e.target.closest('[data-action="create-x"]')) {
+      openCreateTipoPopover(e.target.closest('[data-action="create-x"]'), function(key) {
+        state.xEnumKey = key; refresh();
+      }, 'enum');
+      return;
+    }
+    const setY = e.target.closest('[data-action="set-y"]');
+    if (setY) { currDs().tipoYKey = setY.dataset.key; refresh(); return; }
+    if (e.target.closest('[data-action="create-y"]')) {
+      openCreateTipoPopover(e.target.closest('[data-action="create-y"]'), function(key) {
+        currDs().tipoYKey = key; refresh();
+      }, 'numero');
+      return;
+    }
+    const setGrupo = e.target.closest('[data-action="set-grupo"]');
+    if (setGrupo) { currDs().grupoNome = setGrupo.dataset.nome; refresh(); return; }
+    if (e.target.closest('[data-action="create-grupo"]')) {
+      const nome = prompt('Nome do novo grupo:');
+      if (nome && nome.trim()) {
+        const n = nome.trim();
+        if (!card.grupos.find(g => g.nome === n)) card.grupos.push({ nome: n, itens: [] });
+        currDs().grupoNome = n; refresh();
+      }
+    }
+  });
+}
+
+function openCreateTipoPopover(anchorEl, callback, fixedTipo) {
+  let tipoAtual = fixedTipo || 'enum';
   let estados = [
     { cor: COLOR_PRESETS[0], nome: '' },
     { cor: COLOR_PRESETS[1], nome: '' }
@@ -1292,13 +1500,16 @@ function openCreateTipoPopover(anchorEl, callback) {
   }
 
   function buildHTML(nameVal, unidadeVal) {
-    return '<div class="popover-title">Novo TIPO</div>' +
+    const typeLabel = tipoAtual === 'enum' ? 'Novo TIPO enum' : 'Novo TIPO numero';
+    return '<div class="popover-title">' + (fixedTipo ? typeLabel : 'Novo TIPO') + '</div>' +
       '<div class="popover-form">' +
       '<input type="text" class="inline-edit popover-input" placeholder="Nome (ex: tarefa)" data-field="tipo-name" value="' + esc(nameVal||'') + '">' +
-      '<div class="tipo-btns">' +
-      '<button class="btn' + (tipoAtual==='enum'?' btn-primary':'') + '" data-tipo="enum">Enum</button>' +
-      '<button class="btn' + (tipoAtual==='numero'?' btn-primary':'') + '" data-tipo="numero">Numero</button>' +
-      '</div>' +
+      (fixedTipo ? '' :
+        '<div class="tipo-btns">' +
+        '<button class="btn' + (tipoAtual==='enum'?' btn-primary':'') + '" data-tipo="enum">Enum</button>' +
+        '<button class="btn' + (tipoAtual==='numero'?' btn-primary':'') + '" data-tipo="numero">Numero</button>' +
+        '</div>'
+      ) +
       '<div class="raiz-config">' + buildConfig() + '</div>' +
       '<button class="btn popover-btn" data-action="create-tipo">Criar</button>' +
       '</div>';

@@ -14,7 +14,12 @@ html.dark{
 html.dark .btn{background:var(--surface);color:var(--text);border-color:var(--border)}
 html.dark .btn:hover{background:var(--surface2);border-color:var(--text3);color:var(--text)}
 html.dark .btn-primary{background:#F1F5F9;color:#0F172A;border-color:#F1F5F9}
-html.dark .btn-primary:hover{background:#CBD5E1;color:#0F172A;border-color:#CBD5E1;opacity:1}
+html.dark .btn-primary:hover{background:#CBD5E1;color:#0F172A;border-color:#CBD5E1;opacity:1;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+html.dark .btn-ghost{background:transparent!important;border-color:transparent!important;color:var(--text3)}
+html.dark .btn-ghost:hover{background:var(--surface2)!important;border-color:var(--border)!important;color:var(--text)}
+html.dark .btn-danger{background:#EF4444;color:#fff;border-color:#EF4444}
+html.dark .btn-danger:hover{background:#DC2626;border-color:#DC2626;box-shadow:0 2px 8px rgba(239,68,68,.35)}
+html.dark .btn-warning:hover{background:var(--surface)!important;border-color:#F87171!important;color:#F87171!important}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;padding:24px;max-width:1280px;margin:0 auto}
 
 /* ── Estado vazio ── */
@@ -22,12 +27,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .empty-state h2{font-size:18px;font-weight:500;color:var(--text2)}
 .empty-state p{font-size:13px;color:var(--text3);max-width:400px;text-align:center}
 .empty-actions{display:flex;gap:12px;margin-top:8px}
-.btn{padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:background .15s,border-color .15s}
+.btn{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
 .btn:hover{background:var(--surface2);border-color:var(--text3)}
 .btn-primary{background:var(--text);color:var(--bg);border-color:var(--text)}
-.btn-primary:hover{opacity:.85}
+.btn-primary:hover{opacity:.88;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--text3)}
+.btn-ghost:hover{background:var(--surface2);border-color:var(--border);color:var(--text);opacity:1;box-shadow:none}
 .btn-danger{background:#EF4444;color:#fff;border-color:#EF4444}
-.btn-danger:hover{background:#DC2626;border-color:#DC2626}
+.btn-danger:hover{background:#DC2626;border-color:#DC2626;box-shadow:0 2px 8px rgba(239,68,68,.35);opacity:1}
+.btn-warning{background:var(--surface);color:var(--text);border-color:var(--border)}
+.btn-warning:hover{background:var(--surface);border-color:#EF4444;color:#EF4444;box-shadow:none}
 
 /* ── Header ── */
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:16px}
@@ -199,6 +208,38 @@ body.editing [data-editable="legend-color"]{cursor:pointer;width:12px!important;
 .modal-body{padding:20px;overflow-y:auto;flex:1}
 .modal-textarea{width:100%;min-height:320px;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.6;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:14px;resize:vertical}
 .modal-footer{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)}
+
+/* ══════════════════════════════════════════
+   MODAL GRÁFICO DE LINHAS
+   ══════════════════════════════════════════ */
+
+.modal.modal-linhas{max-width:860px;max-height:90vh}
+.modal.modal-linhas .modal-body{padding:0;overflow:hidden}
+.lm-body{display:flex;height:420px}
+.lm-left{flex:1;position:relative;border-right:1px solid var(--border)}
+.lm-left canvas{position:absolute;inset:16px;width:calc(100% - 32px) !important;height:calc(100% - 32px) !important}
+.lm-right{width:320px;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+.lm-label{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.lm-hint{font-weight:400;text-transform:none;letter-spacing:0;opacity:.7;margin-left:4px}
+.lm-btns{display:flex;flex-wrap:wrap;gap:5px}
+.lm-tipo-btn{font-size:11px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all .15s;white-space:nowrap;line-height:1.6}
+.lm-tipo-btn:hover{border-color:var(--text3)}
+.lm-tipo-btn.lm-active{background:var(--text);color:var(--bg);border-color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.lm-tipo-btn.lm-dashed{border-style:dashed;color:var(--text3)}
+.lm-tipo-btn.lm-dashed:hover{color:var(--text);border-color:var(--text3);border-style:solid}
+.lm-tag{font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;letter-spacing:.03em;flex-shrink:0}
+.lm-tag-enum{background:#7F77DD22;color:#7F77DD}
+.lm-tag-num{background:#378ADD22;color:#378ADD}
+.lm-sep{border:none;border-top:1px solid var(--border);margin:0}
+.lm-ds-row{display:flex;flex-wrap:wrap;gap:5px}
+.lm-ds-tab{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s}
+.lm-ds-tab.lm-active{background:var(--surface);border-color:var(--text);color:var(--text);font-weight:500}
+.lm-ds-tab.lm-dashed{border-style:dashed;color:var(--text3)}
+.lm-ds-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.lm-ds-label{max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm-ds-rm{margin-left:2px;color:var(--text3);font-size:14px;line-height:1;padding:0 2px}
+.lm-ds-rm:hover{color:var(--text)}
+.lm-nome-input{width:100%;box-sizing:border-box;font-size:12px}
 
 /* ══════════════════════════════════════════
    IMPRESSAO (PDF)
