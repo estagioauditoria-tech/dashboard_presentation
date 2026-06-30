@@ -520,9 +520,6 @@ function renderDashboard(data) {
           if (estado) {
             statusStyle = 'background:' + estado.cor + '20;color:' + estado.cor;
           }
-          if (raiz.estados.length > 0 && item.valor === raiz.estados[0].nome) {
-            statusIcon = '<svg width="7" height="7" viewBox="0 0 7 7" fill="none"><polyline points="1,3.5 2.8,5.5 6,1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-          }
         } else if (raiz?.tipo === 'numero') {
           statusStyle = 'background:var(--surface2);color:var(--text3)';
           statusIcon = '<svg width="7" height="7" viewBox="0 0 7 7"><line x1="2" y1="2.5" x2="5" y2="2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="2" y1="4.5" x2="5" y2="4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="2.5" y1="1.5" x2="2" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="4.5" y1="1.5" x2="4" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
@@ -1622,19 +1619,37 @@ function downloadEditedTXT() {
 }
 
 /* ── PDF helpers ── */
-function _pdfChartCfg(tipo, chartData) {
+const _PDF_THEME = {
+  light: {
+    bg: null, cardFill: null,
+    text: '#334155', brand: '#94A3B8', titulo: '#0F172A', subtitulo: '#64748B',
+    cardTitle: '#0F172A', groupLabel: '#94A3B8', itemName: '#334155', itemVal: '#64748B',
+    kpiLabel: '#94A3B8', kpiValue: '#0F172A', kpiSub: '#64748B', kpiSubLabel: '#64748B', kpiSubVal: '#334155',
+    divider: '#E2E8F0', chartTick: '#64748B', chartGrid: '#E2E8F0', chartBg: null
+  },
+  dark: {
+    bg: '#0F172A', cardFill: '#1E293B',
+    text: '#CBD5E1', brand: '#64748B', titulo: '#F8FAFC', subtitulo: '#94A3B8',
+    cardTitle: '#F1F5F9', groupLabel: '#64748B', itemName: '#CBD5E1', itemVal: '#94A3B8',
+    kpiLabel: '#64748B', kpiValue: '#F8FAFC', kpiSub: '#94A3B8', kpiSubLabel: '#94A3B8', kpiSubVal: '#CBD5E1',
+    divider: '#334155', chartTick: '#94A3B8', chartGrid: '#334155', chartBg: '#1E293B'
+  }
+};
+
+function _pdfChartCfg(tipo, chartData, th) {
   const silent = { animation: false, responsive: false, plugins: { legend: { display: false } } };
-  const tick = { color: '#64748B', font: { size: 9 } };
-  const gridColor = { color: '#E2E8F0' };
+  const tick = { color: th.chartTick, font: { size: 9 } };
+  const grid = { color: th.chartGrid };
+  const pieBorder = th.chartBg || '#ffffff';
   if (tipo === 'pizza') return {
     type: 'pie',
-    data: { labels: chartData.labels, datasets: [{ data: chartData.values, backgroundColor: chartData.colors, borderColor: '#fff', borderWidth: 2 }] },
+    data: { labels: chartData.labels, datasets: [{ data: chartData.values, backgroundColor: chartData.colors, borderColor: pieBorder, borderWidth: 2 }] },
     options: silent
   };
   if (tipo === 'barras') return {
     type: 'bar',
     data: { labels: chartData.labels, datasets: [{ data: chartData.values, backgroundColor: chartData.colors, borderRadius: 3 }] },
-    options: { ...silent, scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } } }
+    options: { ...silent, scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid } } }
   };
   const multi = chartData.datasets.length > 1;
   return {
@@ -1642,28 +1657,28 @@ function _pdfChartCfg(tipo, chartData) {
     data: {
       labels: chartData.labels,
       datasets: chartData.datasets.map(ds => ({
-        label: ds.label,
-        data: ds.values,
-        borderColor: ds.color,
-        backgroundColor: ds.color + '30',
-        fill: !multi,
-        tension: 0.3,
-        pointRadius: 3,
-        spanGaps: true
+        label: ds.label, data: ds.values,
+        borderColor: ds.color, backgroundColor: ds.color + '30',
+        fill: !multi, tension: 0.3, pointRadius: 3, spanGaps: true
       }))
     },
     options: {
       ...silent,
-      plugins: { legend: { display: multi, labels: { font: { size: 9 } } } },
-      scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } }
+      plugins: { legend: { display: multi, labels: { color: th.chartTick, font: { size: 9 } } } },
+      scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid } }
     }
   };
 }
 
-function _pdfChartImg(tipo, chartData) {
+function _pdfChartImg(tipo, chartData, th) {
   const canvas = document.createElement('canvas');
   canvas.width = 280; canvas.height = 240;
-  const chart = new Chart(canvas, _pdfChartCfg(tipo, chartData));
+  if (th.chartBg) {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = th.chartBg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  const chart = new Chart(canvas, _pdfChartCfg(tipo, chartData, th));
   const dataUrl = canvas.toDataURL('image/png');
   chart.destroy();
   return dataUrl;
@@ -1690,7 +1705,7 @@ function _pdfKpiBlock(kpi, data) {
   return { stack };
 }
 
-function _pdfCardBlock(card, chartImgs) {
+function _pdfCardBlock(card, chartImgs, th) {
   const tipos = dashboardData.tipos;
   const itemsStack = [];
   for (const grupo of card.grupos) {
@@ -1729,9 +1744,7 @@ function _pdfCardBlock(card, chartImgs) {
       body: [[{
         stack: [
           { text: card.nome, style: 'cardTitle', marginBottom: 5 },
-          chartsCol
-            ? { columns: [chartsCol, itemsCol], columnGap: 6 }
-            : itemsCol
+          chartsCol ? { columns: [chartsCol, itemsCol], columnGap: 6 } : itemsCol
         ],
         margin: [8, 6, 8, 8]
       }]]
@@ -1739,22 +1752,24 @@ function _pdfCardBlock(card, chartImgs) {
     layout: {
       hLineWidth: () => 0,
       vLineWidth: (i) => i === 0 ? 3 : 0,
-      vLineColor: () => card.cor || '#378ADD'
+      vLineColor: () => card.cor || '#378ADD',
+      fillColor: () => th.cardFill
     },
     marginBottom: 8
   };
 }
 
-function exportPDF() {
+function _gerarPDF(darkTheme) {
   const btn = document.getElementById('btn-pdf');
   btn.textContent = 'Gerando...';
   btn.disabled = true;
 
   try {
+    const th = darkTheme ? _PDF_THEME.dark : _PDF_THEME.light;
     const data = dashboardData;
 
     const cardChartImgs = data.cards.map(card =>
-      (card.graficos || []).map(g => _pdfChartImg(g.tipo, collectChartData(card, g, data.tipos)))
+      (card.graficos || []).map(g => _pdfChartImg(g.tipo, collectChartData(card, g, data.tipos), th))
     );
 
     const topKpis = (data.cabecalho || []).filter(k => !k.incluir);
@@ -1762,16 +1777,16 @@ function exportPDF() {
 
     const cardRows = [];
     for (let i = 0; i < data.cards.length; i += 2) {
-      const left = _pdfCardBlock(data.cards[i], cardChartImgs[i]);
+      const left  = _pdfCardBlock(data.cards[i],     cardChartImgs[i],     th);
       const right = i + 1 < data.cards.length
-        ? _pdfCardBlock(data.cards[i + 1], cardChartImgs[i + 1])
+        ? _pdfCardBlock(data.cards[i + 1], cardChartImgs[i + 1], th)
         : { text: '' };
       cardRows.push({ columns: [left, right], columnGap: 10, marginBottom: 4 });
     }
 
     const divider = {
       table: { widths: ['*'], body: [[{ text: '', border: [false,false,false,false] }]] },
-      layout: { hLineWidth: (i) => i === 1 ? 0.5 : 0, vLineWidth: () => 0, hLineColor: () => '#E2E8F0', paddingTop: () => 0, paddingBottom: () => 0, paddingLeft: () => 0, paddingRight: () => 0 },
+      layout: { hLineWidth: (i) => i === 1 ? 0.5 : 0, vLineWidth: () => 0, hLineColor: () => th.divider, paddingTop: () => 0, paddingBottom: () => 0, paddingLeft: () => 0, paddingRight: () => 0 },
       margin: [0, 4, 0, 8]
     };
 
@@ -1779,7 +1794,7 @@ function exportPDF() {
       pageOrientation: 'landscape',
       pageSize: 'A4',
       pageMargins: [24, 24, 24, 24],
-      defaultStyle: { font: 'Roboto', fontSize: 9, color: '#334155' },
+      defaultStyle: { font: 'Roboto', fontSize: 9, color: th.text },
       content: [
         {
           columns: [{
@@ -1794,20 +1809,26 @@ function exportPDF() {
         ...cardRows
       ],
       styles: {
-        brand:      { fontSize: 8, bold: true, color: '#94A3B8' },
-        titulo:     { fontSize: 13, bold: true, color: '#0F172A' },
-        subtitulo:  { fontSize: 9, color: '#64748B' },
-        cardTitle:  { fontSize: 10, bold: true, color: '#0F172A' },
-        groupLabel: { fontSize: 7, bold: true, color: '#94A3B8' },
-        itemName:   { fontSize: 8, color: '#334155' },
-        itemVal:    { fontSize: 8, color: '#64748B' },
-        kpiLabel:   { fontSize: 7, bold: true, color: '#94A3B8' },
-        kpiValue:   { fontSize: 17, bold: true, color: '#0F172A' },
-        kpiSub:     { fontSize: 8, color: '#64748B' },
-        kpiSubLabel:{ fontSize: 8, color: '#64748B' },
-        kpiSubVal:  { fontSize: 8, bold: true, color: '#334155' }
+        brand:       { fontSize: 8, bold: true, color: th.brand },
+        titulo:      { fontSize: 13, bold: true, color: th.titulo },
+        subtitulo:   { fontSize: 9, color: th.subtitulo },
+        cardTitle:   { fontSize: 10, bold: true, color: th.cardTitle },
+        groupLabel:  { fontSize: 7, bold: true, color: th.groupLabel },
+        itemName:    { fontSize: 8, color: th.itemName },
+        itemVal:     { fontSize: 8, color: th.itemVal },
+        kpiLabel:    { fontSize: 7, bold: true, color: th.kpiLabel },
+        kpiValue:    { fontSize: 17, bold: true, color: th.kpiValue },
+        kpiSub:      { fontSize: 8, color: th.kpiSub },
+        kpiSubLabel: { fontSize: 8, color: th.kpiSubLabel },
+        kpiSubVal:   { fontSize: 8, bold: true, color: th.kpiSubVal }
       }
     };
+
+    if (darkTheme) {
+      docDef.background = (currentPage, pageSize) => ({
+        canvas: [{ type: 'rect', x: 0, y: 0, w: pageSize.width, h: pageSize.height, color: th.bg }]
+      });
+    }
 
     const title = (data.titulo || 'dashboard').replace(/\s+/g, '_').toLowerCase();
     pdfMake.createPdf(docDef).download(title + '.pdf');
@@ -1819,6 +1840,20 @@ function exportPDF() {
     btn.textContent = 'Exportar PDF';
     btn.disabled = false;
   }
+}
+
+function exportPDF() {
+  const btn = document.getElementById('btn-pdf');
+  const html = buildPopoverOptions('Tema do PDF', [
+    { value: 'light', label: 'Fundo claro', desc: 'Branco — ideal para impressão' },
+    { value: 'dark',  label: 'Fundo escuro', desc: 'Igual ao modo noturno' }
+  ]);
+  showPopover(btn, html, function(e) {
+    const opt = e.target.closest('.edit-popover-option');
+    if (!opt) return;
+    removePopover();
+    _gerarPDF(opt.dataset.value === 'dark');
+  });
 }
 
 /* ══════════════════════════════════════════
