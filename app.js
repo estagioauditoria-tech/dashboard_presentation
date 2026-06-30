@@ -304,8 +304,17 @@ function collectChartData(card, grafico, raizes) {
     return { labels: Object.keys(contagem), values: Object.values(contagem), colors: Object.keys(contagem).map(k => cores[k] || '#94A3B8') };
   }
 
-  if (grafico.tipo === 'barras' || grafico.tipo === 'linhas') {
-    const firstRaiz = itens[0] ? raizes[itens[0].raiz] : null;
+  if (grafico.tipo === 'linhas') {
+    const allLabels = [...new Set(grupos.flatMap(g => g.itens.map(i => i.nome)))];
+    const datasets = grupos.map((g, idx) => {
+      const map = Object.fromEntries(g.itens.map(i => [i.nome, parseFloat(i.valor) ?? null]));
+      return { label: g.nome, values: allLabels.map(l => l in map ? map[l] : null), color: COLOR_PRESETS[idx % COLOR_PRESETS.length] };
+    });
+    return { labels: allLabels, datasets };
+  }
+
+  if (grafico.tipo === 'barras') {
+    const firstRaiz = itens[0] ? raizes[itens[0].tipo] : null;
     if (firstRaiz?.tipo === 'enum') {
       const contagem = {};
       const cores = {};
@@ -474,9 +483,15 @@ function renderDashboard(data) {
         }
         const chartData = collectChartData(card, grafico, data.tipos);
         bodyHTML += '<div class="chart-legend">';
-        for (let i = 0; i < chartData.labels.length; i++) {
-          const dotAttrs = editMode ? ' data-editable="legend-color" data-label="' + esc(chartData.labels[i]) + '" data-card-idx="' + ci + '" title="Mudar cor"' : '';
-          bodyHTML += '<div class="legend-row"><span style="display:flex;align-items:center;gap:4px"><span class="legend-dot" style="background:' + chartData.colors[i] + '"' + dotAttrs + '></span>' + esc(chartData.labels[i]) + '</span><span style="font-weight:500">' + chartData.values[i] + '</span></div>';
+        if (grafico.tipo === 'linhas') {
+          for (const ds of chartData.datasets) {
+            bodyHTML += '<div class="legend-row"><span style="display:flex;align-items:center;gap:4px"><span class="legend-dot" style="background:' + ds.color + '"></span>' + esc(ds.label) + '</span></div>';
+          }
+        } else {
+          for (let i = 0; i < chartData.labels.length; i++) {
+            const dotAttrs = editMode ? ' data-editable="legend-color" data-label="' + esc(chartData.labels[i]) + '" data-card-idx="' + ci + '" title="Mudar cor"' : '';
+            bodyHTML += '<div class="legend-row"><span style="display:flex;align-items:center;gap:4px"><span class="legend-dot" style="background:' + chartData.colors[i] + '"' + dotAttrs + '></span>' + esc(chartData.labels[i]) + '</span><span style="font-weight:500">' + chartData.values[i] + '</span></div>';
+          }
         }
         bodyHTML += '</div>';
         pendingChartTimeouts.push(setTimeout(() => renderChart(cid, grafico.tipo, chartData), 0));
@@ -593,10 +608,33 @@ function renderChart(canvasId, tipo, chartData) {
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } }, y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } } } }
     };
   } else if (tipo === 'linhas') {
+    const multi = chartData.datasets.length > 1;
     config = {
       type: 'line',
-      data: { labels: chartData.labels, datasets: [{ data: chartData.values, borderColor: chartData.colors[0] || '#378ADD', backgroundColor: (chartData.colors[0] || '#378ADD') + '20', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: chartData.colors[0] || '#378ADD' }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } }, y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } } } }
+      data: {
+        labels: chartData.labels,
+        datasets: chartData.datasets.map(ds => ({
+          label: ds.label,
+          data: ds.values,
+          borderColor: ds.color,
+          backgroundColor: ds.color + '20',
+          fill: !multi,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: ds.color,
+          spanGaps: true
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: multi, labels: { color: textColor, font: { size: 10 }, boxWidth: 10, padding: 8 } }
+        },
+        scales: {
+          x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } }
+        }
+      }
     };
   }
 
@@ -1598,10 +1636,27 @@ function _pdfChartCfg(tipo, chartData) {
     data: { labels: chartData.labels, datasets: [{ data: chartData.values, backgroundColor: chartData.colors, borderRadius: 3 }] },
     options: { ...silent, scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } } }
   };
+  const multi = chartData.datasets.length > 1;
   return {
     type: 'line',
-    data: { labels: chartData.labels, datasets: [{ data: chartData.values, borderColor: chartData.colors[0] || '#378ADD', backgroundColor: (chartData.colors[0] || '#378ADD') + '30', fill: true, tension: 0.3, pointRadius: 3 }] },
-    options: { ...silent, scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } } }
+    data: {
+      labels: chartData.labels,
+      datasets: chartData.datasets.map(ds => ({
+        label: ds.label,
+        data: ds.values,
+        borderColor: ds.color,
+        backgroundColor: ds.color + '30',
+        fill: !multi,
+        tension: 0.3,
+        pointRadius: 3,
+        spanGaps: true
+      }))
+    },
+    options: {
+      ...silent,
+      plugins: { legend: { display: multi, labels: { font: { size: 9 } } } },
+      scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: gridColor } }
+    }
   };
 }
 
